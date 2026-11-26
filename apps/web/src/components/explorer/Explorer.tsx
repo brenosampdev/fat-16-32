@@ -184,16 +184,6 @@ export function Explorer() {
       retry: isNetworkError(e) ? retry : undefined,
     })
 
-  /**
-   * Creating a file or moving an entry can make the folder's chain grow a
-   * cluster, but useCreateFile and useMove do not refresh /disk/fat and (for
-   * move) /disk/info. Refreshed here until src/api/queries.ts covers it.
-   */
-  const refreshDisk = () => {
-    void queryClient.invalidateQueries({ queryKey: keys.info })
-    void queryClient.invalidateQueries({ queryKey: keys.fat })
-  }
-
   /** Waits for a folder's fresh listing, joining the refetch a mutation already started. */
   const settle = (path: string) =>
     queryClient.refetchQueries({ queryKey: keys.dir(path), exact: true }, { cancelRefetch: false })
@@ -267,7 +257,6 @@ export function Explorer() {
         await mkdir.mutateAsync(path)
       } else {
         await createFile.mutateAsync(path)
-        refreshDisk()
       }
       await settle(where)
       selection.select([path], where)
@@ -301,7 +290,6 @@ export function Explorer() {
         throw e
       }
     }
-    refreshDisk()
     await settle(where)
     selection.select([path], where)
   }
@@ -464,15 +452,11 @@ export function Explorer() {
 
   /** POST /file/move per item. Not atomic: what moved before an error stays moved. */
   const moveAll = async (from: string[], target: string, onMoved?: (path: string) => void) => {
-    try {
-      for (const path of from) {
-        const { path_novo } = await move.mutateAsync({ origem: path, destino: target })
-        forget(path)
-        nav.remap(path, path_novo)
-        onMoved?.(path)
-      }
-    } finally {
-      refreshDisk()
+    for (const path of from) {
+      const { path_novo } = await move.mutateAsync({ origem: path, destino: target })
+      forget(path)
+      nav.remap(path, path_novo)
+      onMoved?.(path)
     }
   }
 

@@ -163,6 +163,8 @@ async function main() {
   await mockApi.formatDisk({ variante: 'fat16' })
   for (let i = 0; i < 64; i++) await mockApi.createFile(`/f${i}.txt`)
   await esperaErro(400, () => mockApi.createFile('/f64.txt'), 'root cheio aos 64')
+  const raiz64 = await mockApi.diskInfo()
+  ok(raiz64.clustersUsados === 8, `raiz cresceu ate 8 clusters de 8 slots (veio ${raiz64.clustersUsados})`)
 
   console.log('\n15. diskFat e diskCheck')
   await mockApi.formatDisk({ variante: 'fat16', cluster_size: 512, num_clusters: 16 })
@@ -191,6 +193,63 @@ async function main() {
   ok(sem.entradas.length >= 2, 'semear criou conteudo em /docs')
   const chSeed = await mockApi.chain('/docs/dados.bin')
   ok(fragmentado(chSeed.cadeia), `seed ja nasce fragmentado: [${chSeed.cadeia}]`)
+  const binSeed = await mockApi.readFile('/docs/dados.bin')
+  ok(binSeed.conteudo_texto.includes('�'), 'dados.bin do seed e binario (U+FFFD no texto)')
+  const chkSeed = await mockApi.diskCheck()
+  ok(chkSeed.consistente, 'seed passa no check (sem cluster defeituoso, que a API nao cria)')
+
+  console.log('\n17. Igual ao backend: alocacao')
+  await mockApi.formatDisk({ variante: 'fat16', cluster_size: 512, num_clusters: 64 })
+  await mockApi.createFile('/a')
+  await mockApi.write('/a', txt('a'.repeat(512)))
+  await mockApi.createFile('/b')
+  await mockApi.write('/b', txt('b'.repeat(512)))
+  await mockApi.remove('/a')
+  await mockApi.write('/b', txt('b'.repeat(512)))
+  const ext = await mockApi.chain('/b')
+  ok(ext.cadeia.join() === '4,3', `append estende a partir do ultimo cluster: [${ext.cadeia}]`)
+  await mockApi.write('/b', txt('b'.repeat(512)))
+  await mockApi.replace('/b', txt('c'.repeat(600)))
+  const enc = await mockApi.chain('/b')
+  ok(enc.cadeia.join() === '4,3', `replace menor mantem o comeco da cadeia: [${enc.cadeia}]`)
+
+  console.log('\n18. Igual ao backend: diretorios')
+  await mockApi.mkdir('/g')
+  await mockApi.createFile('/g/z')
+  await mockApi.createFile('/g/a')
+  const ordem = await mockApi.ls('/g')
+  ok(ordem.entradas.map((e) => e.nome).join() === 'z,a', 'ls na ordem dos slots, sem ordenar')
+  for (let i = 0; i < 6; i++) await mockApi.createFile(`/g/f${i}`)
+  ok((await mockApi.chain('/g')).num_clusters === 1, '8 entradas cabem no primeiro cluster da pasta')
+  const livresAntes = (await mockApi.diskInfo()).clustersLivres
+  await mockApi.createFile('/g/f6')
+  ok((await mockApi.chain('/g')).num_clusters === 2, 'a 9a entrada faz a pasta crescer um cluster')
+  ok((await mockApi.diskInfo()).clustersLivres === livresAntes - 1, 'criar arquivo vazio gastou um cluster (da pasta)')
+
+  const mtimeG = (await mockApi.ls('/')).entradas.find((e) => e.nome === 'g')!.mtime
+  const realNow = Date.now
+  Date.now = () => realNow() + 10_000
+  try {
+    await mockApi.createFile('/g/novo')
+    await mockApi.remove('/g/z')
+  } finally {
+    Date.now = realNow
+  }
+  const mtimeG2 = (await mockApi.ls('/')).entradas.find((e) => e.nome === 'g')!.mtime
+  ok(mtimeG2 === mtimeG, 'mtime da pasta pai nao muda ao criar ou apagar dentro dela')
+
+  console.log('\n19. Igual ao backend: validacao e mensagens')
+  await esperaErro(422, () => mockApi.overwrite('/b', -1, txt('x')), 'offset negativo e 422 (Pydantic)')
+  await esperaErro(422, () => mockApi.overwrite('/b', 1.5, txt('x')), 'offset fracionario e 422 (Pydantic)')
+  await esperaErro(400, () => mockApi.write('/b', 'não é base64!!'), 'Base64 invalido')
+  await esperaErro(404, () => mockApi.readFile('/nada'), 'read de arquivo inexistente')
+  await esperaErro(409, () => mockApi.rename('/b', 'b'), 'rename para o proprio nome (o backend acusa 409)')
+  await esperaErro(400, () => mockApi.move('/', '/g'), 'mover a raiz')
+  const longo = 'relatório-avaliação-final.txt' // 29 caracteres, 32 bytes em UTF-8
+  await mockApi.createFile('/' + longo)
+  const nomes = (await mockApi.ls('/')).entradas.map((e) => e.nome)
+  ok(!nomes.includes(longo), 'nome acima de 31 bytes e cortado, como no backend')
+  await esperaErro(404, () => mockApi.readFile('/' + longo), 'o caminho original deixa de existir')
 
   console.log(falhas === 0 ? '\nTUDO OK\n' : `\n${falhas} FALHA(S)\n`)
   process.exit(falhas === 0 ? 0 : 1)

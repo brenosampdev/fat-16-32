@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
-import { base64ToBytes, basename, parentOf } from '../../api'
+import { base64ToBytes, basename } from '../../api'
 import type { DiskInfo, FatEntry, ReadData } from '../../api'
 import { keys, useOverwrite, useReplace, useWrite } from '../../api/queries'
 import {
@@ -347,12 +347,9 @@ export function ContentEditor({ mode, path, file, chain, disk, fat, onClose }: P
       else if (mode === 'replace') await replace.mutateAsync({ path, base64 })
       else {
         await overwrite.mutateAsync({ path, offset: Number(offsetText), base64 })
-        // useOverwrite only refreshes the content, but the backend also stamps
-        // a new mtime on the directory entry: the Modificado column would go
-        // stale. And the FAT is read again on purpose: the map on screen is
-        // then the server's answer, which is the proof that nothing moved.
-        // Refreshed here until src/api/queries.ts covers the directory.
-        void queryClient.invalidateQueries({ queryKey: keys.dir(parentOf(path)) })
+        // an overwrite never changes the FAT, so useOverwrite leaves it alone;
+        // it is read again on purpose: the map on screen is then the server's
+        // answer, which is the proof that nothing moved
         void queryClient.invalidateQueries({ queryKey: keys.fat })
       }
       onClose()

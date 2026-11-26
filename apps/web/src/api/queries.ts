@@ -86,7 +86,9 @@ export function useCreateFile() {
   const invalidar = useInvalidar()
   return useMutation({
     mutationFn: (path: string) => api.createFile(path),
-    onSuccess: (_, path) => invalidar([parentOf(path)], ['espaco']),
+    // o arquivo nasce sem cluster, mas a pasta pai cresce um cluster quando
+    // os slots acabam: FAT e espaco livre mudam
+    onSuccess: (_, path) => invalidar([parentOf(path)]),
   })
 }
 
@@ -111,8 +113,8 @@ export function useMove() {
   return useMutation({
     mutationFn: ({ origem, destino }: { origem: string; destino: string }) =>
       api.move(origem, destino),
-    // os DOIS pais mudam
-    onSuccess: (_, { origem, destino }) => invalidar([parentOf(origem), destino], []),
+    // os DOIS pais mudam, e o destino pode crescer um cluster (FAT e espaco)
+    onSuccess: (_, { origem, destino }) => invalidar([parentOf(origem), destino]),
   })
 }
 
@@ -144,13 +146,17 @@ export function useReplace() {
   })
 }
 
-/** Nao muda tamanho nem alocacao: invalida so o conteudo. */
+/** Nao muda tamanho nem alocacao, mas muda o mtime: conteudo e a pasta pai. */
 export function useOverwrite() {
+  const invalidar = useInvalidar()
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ path, offset, base64 }: { path: string; offset: number; base64: string }) =>
       api.overwrite(path, offset, base64),
-    onSuccess: (_, { path }) => qc.invalidateQueries({ queryKey: keys.file(path) }),
+    onSuccess: (_, { path }) => {
+      invalidar([parentOf(path)], [])
+      qc.invalidateQueries({ queryKey: keys.file(path) })
+    },
   })
 }
 
