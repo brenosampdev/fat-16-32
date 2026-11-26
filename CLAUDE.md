@@ -15,17 +15,21 @@ Trabalho acadêmico de Sistemas de Arquivos. Duas aplicações:
 | `docs/build-frontend.md` | especificação completa: API real, componentes, 22 telas, fases |
 | `docs/mockups/telas.md` | as 22 telas com as anotações de comportamento — **leia este** |
 | `docs/mockups/mockups.html` | o mesmo, renderizável no navegador (1,9 MB, não abra em contexto) |
+| `docs/demo/roteiro.md` | roteiro da apresentação, ensaiado; os arquivos a enviar ficam ao lado |
 | `apps/api/api.py`, `apps/api/fat_simulator.py` | fonte da verdade sobre comportamento |
 
 Em dúvida sobre o que a API faz, **leia o código Python**. Não presuma, não invente.
 
 ## Estado atual
 
-A Fase 0 do documento (camada de API) **já está feita**: `types.ts`, `normalize.ts`,
-`client.ts` e `mock.ts` estão corrigidos contra o backend real, com typecheck limpo e
-smoke test passando. O próximo passo é a Fase 1 — o shell estático.
+As fases 0 a 6 de `docs/build-frontend.md` estão feitas, e o roteiro de demonstração foi
+ensaiado contra o backend real. Não há fase pendente: daqui em diante é correção e ajuste.
 
-`src/App.tsx` é uma prova de vida provisória, para ser substituída na Fase 1.
+- `src/api/` — client, mock, normalizador e hooks do TanStack Query (`queries.ts`)
+- `src/components/` — `shell/` (janela XP), `explorer/` (árvore e lista), `content/`
+  (visualizador e editores), `inspector/` (mapa de clusters, cadeia, verificação), `dialogs/`
+- `src/lib/` — lógica sem React: cadeias, formatação, previsão do efeito de uma escrita
+- `smoke.ts` — uma seção por fase; a seção 22 repete o roteiro de demonstração no mock
 
 ## Fatos da API que quebram código se esquecidos
 
@@ -86,3 +90,11 @@ npm run check        # pytest + smoke do mock + typecheck — rode antes de conc
 
 O frontend roda em modo mock por padrão (`VITE_MOCK=1` em `apps/web/.env.development`).
 Apague essa linha para falar com o backend real.
+
+Para validar contra o backend sem tocar no `apps/api/fat_disk.img` de quem está usando,
+suba um par isolado em outras portas, com o disco num arquivo de rascunho:
+
+```bash
+cd apps/api && FAT_DISK_PATH=/caminho/rascunho.img uvicorn api:app --port 8001
+cd apps/web && VITE_MOCK=0 VITE_API_URL=http://localhost:8001 npx vite --port 5174 --strictPort
+```
