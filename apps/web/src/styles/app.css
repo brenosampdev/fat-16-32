@@ -822,3 +822,286 @@ body {
   justify-content: center;
   padding: 8px 14px 12px;
 }
+
+/* ------------------------------------------------------ selection states */
+
+/* dotted focus outline on the last item clicked (telas.md, tela 02) */
+.filelist:focus tr.focused .name-text {
+  outline: 1px dotted #000;
+  outline-offset: -1px;
+}
+
+.filelist:focus tr.focused.selected .name-text {
+  outline-color: #fff;
+}
+
+/* cut and waiting for a paste: faded until it moves (telas.md, tela 16) */
+.filelist tr.cut .name-cell > svg,
+.filelist tr.cut .name-text {
+  opacity: 0.45;
+}
+
+/* ------------------------------------------------------- inline rename */
+
+.filelist-table tr.renaming td.name {
+  overflow: visible;
+}
+
+.rename {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.xp .rename input.rename-input {
+  height: 16px;
+  max-width: 220px;
+  padding: 0 2px;
+  border: 1px solid #000;
+  font: inherit;
+}
+
+.xp .rename input.rename-input.invalid {
+  border-color: #d8321f;
+}
+
+.rename-count {
+  color: #6a7282;
+  font-variant-numeric: tabular-nums;
+}
+
+/* error balloon hanging under the field (telas.md, tela 15b) */
+.balloon {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 320px;
+  padding: 5px 8px;
+  background: #ffffe1;
+  border: 1px solid #000;
+  border-radius: 3px;
+  box-shadow: 2px 2px 3px rgb(0 0 0 / 0.25);
+  color: #000;
+  white-space: normal;
+}
+
+.balloon::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 12px;
+  border: 5px solid transparent;
+  border-top: 0;
+  border-bottom: 6px solid #000;
+}
+
+.balloon > svg {
+  flex: none;
+}
+
+/* ---------------------------------------------------------- context menu */
+
+.menu-dropdown.context-menu {
+  position: fixed;
+  top: auto;
+  z-index: 200;
+}
+
+/* ------------------------------------------------------------ chain chips */
+
+.chain-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chain-chip {
+  padding: 1px 4px;
+  background: #0033a0;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.chain-chip.eof {
+  background: #e4e4e4;
+  color: #333;
+}
+
+/* --------------------------------------------------------- dialog content */
+
+.muted {
+  color: #4a5565;
+}
+
+.xp .dialog-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.xp .dialog-body .dialog-text p {
+  margin: 0;
+}
+
+.xp .dialog-buttons {
+  gap: 6px;
+}
+
+.xp .dialog-buttons button {
+  min-width: 75px;
+}
+
+.chain-lines {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chain-lines li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.chain-line-name {
+  flex: none;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* label / value pairs: progress counts, the move dialog's "O que muda" */
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 3px 14px;
+  margin: 0;
+}
+
+.facts dt {
+  color: #4a5565;
+}
+
+.facts dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------- delete progress */
+
+.xp .dialog.delete-progress {
+  width: 400px;
+}
+
+.progress-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px 4px;
+}
+
+.progress-body p {
+  margin: 0;
+}
+
+/* determinate XP bar: green blocks, one more per call */
+.xp-blocks {
+  height: 15px;
+  padding: 1px;
+  background: #fff;
+  border: 1px solid #686868;
+  border-radius: 2px;
+}
+
+.xp-blocks-fill {
+  height: 100%;
+  background: repeating-linear-gradient(90deg, #2fba2f 0 8px, transparent 8px 10px);
+  transition: width 0.12s linear;
+}
+
+.progress-list {
+  position: relative;
+  max-height: 96px;
+  margin: 0;
+  padding: 3px 4px;
+  overflow: auto;
+  list-style: none;
+  background: #fff;
+  border: 1px solid #7f9db9;
+}
+
+.progress-list li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 17px;
+  color: #4a5565;
+  white-space: nowrap;
+}
+
+.progress-list li.done {
+  color: #6a7282;
+  text-decoration: line-through;
+}
+
+.progress-list li.current {
+  color: #0a0a0a;
+  font-weight: bold;
+}
+
+/* ------------------------------------------------------------ move dialog */
+
+.xp .dialog.move-dialog {
+  width: 400px;
+  max-width: 400px;
+}
+
+.move-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px 2px;
+}
+
+.move-body > p {
+  margin: 0;
+}
+
+.move-tree {
+  display: flex;
+  height: 120px;
+}
+
+.tree-note {
+  margin-left: 6px;
+  color: #6a7282;
+}
+
+.xp .move-effect {
+  margin: 0;
+  padding: 6px 10px 8px;
+}
+
+.move-lead {
+  margin: 0 0 6px;
+  font-weight: bold;
+}
+
+.move-problem {
+  margin: 8px 0 0;
+  color: #c0200f;
+}

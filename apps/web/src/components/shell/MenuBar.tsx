@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 
 import { cls } from '../../lib/display'
 
@@ -55,34 +56,53 @@ export function MenuBar({ menus }: { menus: Menu[] }) {
             {menu.label}
           </button>
 
-          {open === i && (
-            <ul className="menu-dropdown" role="menu">
-              {menu.items.map((item, j) =>
-                'separator' in item ? (
-                  <li key={j} className="menu-separator" role="separator" />
-                ) : (
-                  <li key={j} role="none">
-                    <button
-                      type="button"
-                      role={item.checked === undefined ? 'menuitem' : 'menuitemradio'}
-                      aria-checked={item.checked}
-                      className={cls('plano', 'menu-item', item.checked && 'checked')}
-                      disabled={item.disabled || !item.onSelect}
-                      onClick={() => {
-                        setOpen(null)
-                        item.onSelect?.()
-                      }}
-                    >
-                      <span>{item.label}</span>
-                      {item.shortcut && <span className="menu-shortcut">{item.shortcut}</span>}
-                    </button>
-                  </li>
-                ),
-              )}
-            </ul>
-          )}
+          {open === i && <MenuList items={menu.items} onPick={() => setOpen(null)} />}
         </div>
       ))}
     </div>
+  )
+}
+
+/**
+ * The items of one dropdown, shared by the menu bar and the context menu.
+ * Items without onSelect render disabled. onPick runs before the item's own
+ * action, so the menu is gone when a dialog opens.
+ */
+export function MenuList({
+  items,
+  onPick,
+  className,
+  style,
+}: {
+  items: MenuItem[]
+  onPick: () => void
+  className?: string
+  style?: CSSProperties
+}) {
+  return (
+    <ul className={cls('menu-dropdown', className)} role="menu" style={style}>
+      {items.map((item, j) =>
+        'separator' in item ? (
+          <li key={j} className="menu-separator" role="separator" />
+        ) : (
+          <li key={j} role="none">
+            <button
+              type="button"
+              role={item.checked === undefined ? 'menuitem' : 'menuitemradio'}
+              aria-checked={item.checked}
+              className={cls('plano', 'menu-item', item.checked && 'checked')}
+              disabled={item.disabled || !item.onSelect}
+              onClick={() => {
+                onPick()
+                item.onSelect?.()
+              }}
+            >
+              <span>{item.label}</span>
+              {item.shortcut && <span className="menu-shortcut">{item.shortcut}</span>}
+            </button>
+          </li>
+        ),
+      )}
+    </ul>
   )
 }

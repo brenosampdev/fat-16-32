@@ -18,6 +18,7 @@ type Props = {
   icon: IconName
   toggle: TreeToggle
   selected: boolean
+  note?: string
   /** without a handler the box is only an indicator (the root never collapses) */
   onToggle?: () => void
   onSelect?: () => void
@@ -25,7 +26,16 @@ type Props = {
 }
 
 /** One node of the folder tree. The +/- box and the label are separate targets, as in XP. */
-export function TreeItem({ label, icon, toggle, selected, onToggle, onSelect, children }: Props) {
+export function TreeItem({
+  label,
+  icon,
+  toggle,
+  selected,
+  note,
+  onToggle,
+  onSelect,
+  children,
+}: Props) {
   const rowRef = useRef<HTMLDivElement>(null)
 
   // keep the selected folder visible after a navigation made elsewhere
@@ -54,6 +64,7 @@ export function TreeItem({ label, icon, toggle, selected, onToggle, onSelect, ch
           <Icon name={icon} />
           <span className="tree-text">{label}</span>
         </span>
+        {note && <span className="tree-note">{note}</span>}
       </div>
       {children && <ul role="group">{children}</ul>}
     </li>

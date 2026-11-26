@@ -1,5 +1,7 @@
 import { useCallback, useReducer } from 'react'
 
+import { remapPath } from '../lib/names'
+
 // Navigation is UI state, not server state: it never goes into the query cache
 // (build-frontend.md, "Estado").
 
@@ -11,7 +13,11 @@ type State = {
   visited: string[]
 }
 
-type Action = { type: 'go'; path: string } | { type: 'back' } | { type: 'forward' }
+type Action =
+  | { type: 'go'; path: string }
+  | { type: 'back' }
+  | { type: 'forward' }
+  | { type: 'remap'; from: string; to: string }
 
 const remember = (visited: string[], path: string) => [path, ...visited.filter((p) => p !== path)]
 
@@ -46,6 +52,16 @@ function reducer(s: State, a: Action): State {
         visited: remember(s.visited, target),
       }
     }
+    case 'remap': {
+      // a renamed or moved folder keeps its place in the history under its new path
+      const fix = (p: string) => remapPath(p, a.from, a.to)
+      return {
+        back: s.back.map(fix),
+        current: fix(s.current),
+        forward: s.forward.map(fix),
+        visited: [...new Set(s.visited.map(fix))],
+      }
+    }
   }
 }
 
@@ -61,6 +77,10 @@ export function useNavigation(initial = '/') {
   const navigate = useCallback((path: string) => dispatch({ type: 'go', path }), [])
   const goBack = useCallback(() => dispatch({ type: 'back' }), [])
   const goForward = useCallback(() => dispatch({ type: 'forward' }), [])
+  const remap = useCallback(
+    (from: string, to: string) => dispatch({ type: 'remap', from, to }),
+    [],
+  )
 
   return {
     current: state.current,
@@ -70,5 +90,6 @@ export function useNavigation(initial = '/') {
     navigate,
     goBack,
     goForward,
+    remap,
   }
 }

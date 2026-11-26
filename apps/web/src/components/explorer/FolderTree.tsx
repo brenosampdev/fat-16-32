@@ -16,6 +16,10 @@ type Props = {
   loading?: boolean
   /** no disk open: there is nothing to draw (tela 17) */
   empty?: boolean
+  /** muted text after a folder's name, e.g. '(pasta atual)' in the move dialog */
+  note?: (path: string) => string | undefined
+  /** accessible name of the tree */
+  ariaLabel?: string
 }
 
 type Ctx = {
@@ -23,6 +27,7 @@ type Ctx = {
   expanded: Set<string>
   toggle: (path: string) => void
   onNavigate: (path: string) => void
+  note?: (path: string) => string | undefined
 }
 
 const ROOT_LABEL = `${DRIVE}\\`
@@ -42,7 +47,14 @@ const lineage = (path: string): string[] => {
  * Folders only, loaded one level at a time with the same GET /ls the list
  * uses, so both share one cache entry per folder.
  */
-export function FolderTree({ current, onNavigate, loading, empty }: Props) {
+export function FolderTree({
+  current,
+  onNavigate,
+  loading,
+  empty,
+  note,
+  ariaLabel = 'Pastas',
+}: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(lineage(current)))
   const [revealed, setRevealed] = useState(current)
   const [collapsedTo, setCollapsedTo] = useState<string | null>(null)
@@ -76,11 +88,11 @@ export function FolderTree({ current, onNavigate, loading, empty }: Props) {
     }
   }
 
-  const ctx: Ctx = { current, expanded, toggle, onNavigate }
+  const ctx: Ctx = { current, expanded, toggle, onNavigate, note }
 
   return (
     <div className="tree" tabIndex={0}>
-      <ul role="tree" aria-label="Pastas">
+      <ul role="tree" aria-label={ariaLabel}>
         {empty ? null : loading ? (
           <TreeItem label={ROOT_LABEL} icon="drive" toggle="collapsed" selected={false} />
         ) : (
@@ -122,6 +134,7 @@ function FolderNode({ path, label, ctx }: { path: string; label: string; ctx: Ct
       icon={isRoot ? 'drive' : selected ? 'folderOpen' : 'folder'}
       toggle={toggle}
       selected={selected}
+      note={ctx.note?.(path)}
       onToggle={isRoot ? undefined : () => ctx.toggle(path)}
       onSelect={() => ctx.onNavigate(path)}
     >
