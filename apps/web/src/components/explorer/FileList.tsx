@@ -1,12 +1,12 @@
-import type { KeyboardEventHandler, ReactNode } from 'react'
+import { useEffect, useRef } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 
 import { joinPath, tipoLegivel } from '../../api'
 import type { LsEntry } from '../../api'
 import { cls, formatBytes, formatDateTime } from '../../lib/display'
+import { revealIn } from '../../lib/dom'
+import type { Column, SortState } from '../../lib/sort'
 import { Icon } from '../common/Icon'
-
-export type Column = 'name' | 'size' | 'type' | 'modified' | 'cluster'
-export type SortState = { column: Column; asc: boolean }
 
 const COLUMNS: { id: Column; label: string; width?: number; right?: boolean }[] = [
   { id: 'name', label: 'Nome' },
@@ -29,7 +29,6 @@ type Props = {
   onSort?: (column: Column) => void
   onSelect?: (path: string | null) => void
   onOpen?: (entry: LsEntry, path: string) => void
-  onKeyDown?: KeyboardEventHandler<HTMLDivElement>
 }
 
 /** Details view. Only what /ls returns: no fragment column (telas.md, tela 01). */
@@ -42,10 +41,51 @@ export function FileList({
   onSort,
   onSelect,
   onOpen,
-  onKeyDown,
 }: Props) {
+  const boxRef = useRef<HTMLDivElement>(null)
+  const headRef = useRef<HTMLTableSectionElement>(null)
+
+  // keyboard moves and returning from a subfolder must keep the row in view
+  useEffect(() => {
+    const box = boxRef.current
+    revealIn(box, box?.querySelector('tbody tr.selected') ?? null, headRef.current?.offsetHeight)
+  }, [selected, entries])
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (notice || entries.length === 0) return
+    const paths = entries.map((x) => joinPath(dir, x.nome))
+    const i = selected ? paths.indexOf(selected) : -1
+    const last = entries.length - 1
+    let next: number
+    switch (e.key) {
+      case 'ArrowDown':
+        next = i < 0 ? 0 : Math.min(i + 1, last)
+        break
+      case 'ArrowUp':
+        next = i < 0 ? 0 : Math.max(i - 1, 0)
+        break
+      case 'Home':
+        next = 0
+        break
+      case 'End':
+        next = last
+        break
+      case 'Enter':
+        if (i >= 0) {
+          e.preventDefault()
+          onOpen?.(entries[i], paths[i])
+        }
+        return
+      default:
+        return
+    }
+    e.preventDefault()
+    onSelect?.(paths[next])
+  }
+
   return (
     <div
+      ref={boxRef}
       className="filelist"
       tabIndex={0}
       onKeyDown={onKeyDown}
@@ -60,7 +100,7 @@ export function FileList({
             <col key={c.id} style={c.width ? { width: c.width } : undefined} />
           ))}
         </colgroup>
-        <thead>
+        <thead ref={headRef}>
           <tr>
             {COLUMNS.map((c) => (
               <th key={c.id} aria-sort={sortAria(sort, c.id)}>

@@ -1,6 +1,8 @@
+import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 
 import { cls } from '../../lib/display'
+import { revealIn } from '../../lib/dom'
 import { Icon } from '../common/Icon'
 import type { IconName } from '../common/Icon'
 
@@ -24,13 +26,20 @@ type Props = {
 
 /** One node of the folder tree. The +/- box and the label are separate targets, as in XP. */
 export function TreeItem({ label, icon, toggle, selected, onToggle, onSelect, children }: Props) {
+  const rowRef = useRef<HTMLDivElement>(null)
+
+  // keep the selected folder visible after a navigation made elsewhere
+  useEffect(() => {
+    if (selected) revealIn(rowRef.current?.closest<HTMLElement>('.tree') ?? null, rowRef.current)
+  }, [selected])
+
   return (
     <li
       role="treeitem"
       aria-selected={selected}
       aria-expanded={toggle === 'leaf' ? undefined : toggle === 'expanded'}
     >
-      <div className="tree-row">
+      <div className="tree-row" ref={rowRef}>
         {toggle !== 'leaf' && (
           <button
             type="button"

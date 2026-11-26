@@ -779,3 +779,46 @@ body {
 .xp .status-bar-field.status-disk {
   flex: 0 0 140px;
 }
+
+/* ---------------------------------------------------------------- dialogs */
+
+/* Modal without dimming: the overlay is transparent and only swallows clicks
+   (telas.md, tela 05). Fixed to the viewport, so the dialog stays put while
+   the Explorer window is dragged around under it. */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+}
+
+.xp .dialog {
+  min-width: 300px;
+  max-width: 440px;
+}
+
+.xp .dialog-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0;
+  padding: 14px 14px 6px;
+}
+
+.xp .dialog-body svg {
+  flex: none;
+}
+
+.xp .dialog-body p {
+  margin: 8px 0 0;
+  line-height: 1.4;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.xp .dialog-buttons {
+  display: flex;
+  justify-content: center;
+  padding: 8px 14px 12px;
+}
