@@ -1763,3 +1763,140 @@ body {
 .check-problems li {
   overflow-wrap: anywhere;
 }
+
+/* -------------------------------------------------------- format (08, 17) */
+
+.xp .dialog.format-dialog {
+  width: 370px;
+  max-width: 370px;
+}
+
+.xp .dialog.format-dialog.required {
+  width: 330px;
+}
+
+.xp .format-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px 4px;
+}
+
+.format-lead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.format-lead p {
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* tela 08: one label / field pair per row */
+.xp .format-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.xp .format-fields select,
+.xp .format-fields input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.xp .format-fields input.invalid {
+  border-color: #d8321f;
+}
+
+/* tela 17: labels above the fields, the size and the count side by side */
+.xp .required .format-fields {
+  grid-template-columns: 1fr 1fr;
+  grid-template-areas:
+    'fs-l fs-l'
+    'fs-f fs-f'
+    'cs-l n-l'
+    'cs-f n-f';
+  gap: 3px 10px;
+}
+
+.xp .required .fs-label {
+  grid-area: fs-l;
+}
+
+.xp .required .fs-field {
+  grid-area: fs-f;
+  margin-bottom: 5px;
+}
+
+.xp .required .cs-label {
+  grid-area: cs-l;
+}
+
+.xp .required .cs-field {
+  grid-area: cs-f;
+}
+
+.xp .required .n-label {
+  grid-area: n-l;
+}
+
+.xp .required .n-field {
+  grid-area: n-f;
+}
+
+.format-capacity {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.xp .format-result {
+  margin: 0;
+  padding: 4px 10px 8px;
+}
+
+.format-result p {
+  margin: 0;
+}
+
+.format-problem {
+  margin: 0;
+  color: #c0200f;
+  overflow-wrap: anywhere;
+}
+
+.format-running {
+  display: flex;
+  flex-direction: column;
+}
+
+.format-running .xp-progress {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* tela 19: 64 × 16 cells of 8 px need a taller map */
+.clustermap.dense {
+  height: 200px;
+}
+
+/* ------------------------------------------------- insufficient space (05) */
+
+/* a dt / dd pair grouped for React keys; the grid still sees both cells */
+.facts-row {
+  display: contents;
+}
+
+.xp .dialog-body .error-detail {
+  padding-top: 2px;
+}
+
+.error-detail .facts {
+  margin: 2px 0;
+}

@@ -3,12 +3,14 @@
 // cut / paste) and delete, recursive for folders with content. Phase 4: open
 // a file (viewer and the three writes) and upload one from the computer.
 // Phase 5: the selection lit on the map, Propriedades and Verificar disco.
+// Phase 6: Formatar (telas 08 and 17) and the insufficient space box (05).
 
 import { useQueryClient } from '@tanstack/react-query'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, ReactNode } from 'react'
 
 import {
+  ApiError,
   api,
   basename,
   ehSemDisco,
@@ -37,10 +39,17 @@ import { useNavigation } from '../../hooks/useNavigation'
 import { useSelection } from '../../hooks/useSelection'
 import { useWindowShortcuts } from '../../hooks/useWindowShortcuts'
 import { chainFromFat } from '../../lib/chain'
+import { clustersNeeded, formatCount } from '../../lib/content'
 import { planDelete } from '../../lib/deletePlan'
 import type { DeletePlan } from '../../lib/deletePlan'
 import { DRIVE, formatBytes, parseTypedPath, toDosPath } from '../../lib/display'
-import { errorTitle, isNetworkError, messageOf } from '../../lib/errors'
+import {
+  ShortageError,
+  describeShortage,
+  errorTitle,
+  isNetworkError,
+  messageOf,
+} from '../../lib/errors'
 import { describeMany, describeOne } from '../../lib/inspect'
 import { fitName, remapPath, uniqueName } from '../../lib/names'
 import { nextSort, sortEntries } from '../../lib/sort'
@@ -49,6 +58,7 @@ import { FileViewer } from '../content/FileViewer'
 import { ConfirmDelete } from '../dialogs/ConfirmDelete'
 import { DeleteProgress } from '../dialogs/DeleteProgress'
 import { ErrorDialog } from '../dialogs/ErrorDialog'
+import { FormatDialog } from '../dialogs/FormatDialog'
 import { MoveDialog } from '../dialogs/MoveDialog'
 import { PropertiesDialog } from '../dialogs/PropertiesDialog'
 import { UploadDialog } from '../dialogs/UploadDialog'
@@ -72,7 +82,15 @@ import { FolderTree } from './FolderTree'
 import { RenameField } from './RenameField'
 
 type Item = { path: string; entry: LsEntry }
-type Failure = { title: string; message: string; retry?: () => void }
+type Failure = {
+  title: string
+  message: string
+  retry?: () => void
+  /** tela 05 */
+  lead?: string
+  facts?: [string, string][]
+  note?: string
+}
 type Renaming = { dir: string; path: string; error: string | null; busy: boolean }
 /** cut items wait here for a paste; nothing is moved until then */
 type Clipboard = { from: string; paths: string[] }
@@ -94,7 +112,7 @@ type Upload = { file: File; reason: string; suggestion: string; taken: Set<strin
 const deleteStep = (total: number) => Math.min(150, 3000 / total)
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+const plural = (n: number, one: string, many: string) => `${formatCount(n)} ${n === 1 ? one : many}`
 
 /** '3 objetos · 3.900 B'; the byte sum only counts files (folders have tamanho 0). */
 const describeFolder = (entries: LsEntry[]) => {
@@ -106,7 +124,17 @@ const describeFolder = (entries: LsEntry[]) => {
 /** From three selected items on, the strip under the map lists only the fragmented ones (tela 02). */
 const STRIP_ALL = 2
 
+/**
+ * A new disk is a new window: history, selection, the clipboard, a rename
+ * and the tree's open folders all referred to the old one, so a format
+ * mounts the window again instead of resetting each of them.
+ */
 export function Explorer() {
+  const [disk, setDisk] = useState(0)
+  return <ExplorerBody key={disk} onFormatted={() => setDisk((n) => n + 1)} />
+}
+
+function ExplorerBody({ onFormatted }: { onFormatted: () => void }) {
   const queryClient = useQueryClient()
   const nav = useNavigation('/')
   const { current } = nav
@@ -137,6 +165,10 @@ export function Explorer() {
   const [properties, setProperties] = useState<Item | null>(null)
   /** telas 18a and 18b */
   const [checking, setChecking] = useState(false)
+  /** tela 17 when no disk is open, tela 08 otherwise */
+  const [formatting, setFormatting] = useState<'required' | 'normal' | null>(null)
+  /** tela 17 opens Formatar by itself once; after Cancelar it comes back from the menu */
+  const offered = useRef(false)
   const cancelDelete = useRef(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
@@ -155,8 +187,8 @@ export function Explorer() {
   const noDisk = ehSemDisco(info.error) || ehSemDisco(fat.error) || ehSemDisco(dir.error)
   // first read only: a refresh keeps the old FAT on screen meanwhile
   const readingFat = !noDisk && fat.isPending
-  // tela 04 locks the toolbar while the FAT is read; tela 17 leaves only
-  // Formatar, which arrives in phase 6
+  // tela 04 locks the whole toolbar while the FAT is read; tela 17 leaves
+  // only Formatar
   const locked = noDisk || readingFat
   const modal = !!(
     failure ||
@@ -166,7 +198,8 @@ export function Explorer() {
     viewing ||
     uploading ||
     properties ||
-    checking
+    checking ||
+    formatting
   )
   /** writes are allowed: a disk, a listed folder, nothing else running */
   const canEdit = !locked && !busy && !!dir.data
@@ -189,11 +222,24 @@ export function Explorer() {
   // ------------------------------------------------------------- helpers
 
   const fail = (e: unknown, retry?: () => void) =>
-    setFailure({
-      title: errorTitle(e),
-      message: messageOf(e),
-      retry: isNetworkError(e) ? retry : undefined,
-    })
+    setFailure(
+      e instanceof ShortageError
+        ? { title: 'Espaço insuficiente', message: e.message, ...describeShortage(e.shortage) }
+        : {
+            title: errorTitle(e),
+            message: messageOf(e),
+            retry: isNetworkError(e) ? retry : undefined,
+          },
+    )
+
+  // every endpoint answering "Nenhum disco aberto" opens Formatar, never an
+  // error box (telas.md, tela 17)
+  useEffect(() => {
+    if (noDisk && !offered.current) {
+      offered.current = true
+      setFormatting('required')
+    }
+  }, [noDisk])
 
   /** Waits for a folder's fresh listing, joining the refetch a mutation already started. */
   const settle = (path: string) =>
@@ -290,6 +336,7 @@ export function Explorer() {
     const path = joinPath(where, name)
     // read before touching the disk: a local read error leaves nothing behind
     const base64 = await fileToBase64(file)
+    const before = disk?.clustersLivres
     await createFile.mutateAsync(path)
     if (file.size > 0) {
       try {
@@ -298,11 +345,44 @@ export function Explorer() {
         // create passed and write did not (a full disk, typically): without
         // this the folder keeps an empty orphan
         await remove.mutateAsync(path).catch(() => {})
-        throw e
+        throw await explainWrite(e, file.size, name, where, before)
       }
     }
     await settle(where)
     selection.select([path], where)
+  }
+
+  /**
+   * Tela 05: a refused write becomes ShortageError when a fresh /disk/info
+   * shows the content needs more clusters than are free. Any other refusal
+   * goes on as it came.
+   */
+  const explainWrite = async (
+    e: unknown,
+    size: number,
+    name: string,
+    where: string,
+    before: number | undefined,
+  ) => {
+    if (!(e instanceof ApiError) || e.status !== 400) return e
+    try {
+      const now = await queryClient.fetchQuery({ queryKey: keys.info, queryFn: api.diskInfo })
+      const needed = clustersNeeded(size, now.clusterSize)
+      if (needed <= now.clustersLivres) return e
+      return new ShortageError(
+        {
+          name,
+          dir: where,
+          needed,
+          free: now.clustersLivres,
+          clusterSize: now.clusterSize,
+          untouched: before === now.clustersLivres,
+        },
+        e,
+      )
+    } catch {
+      return e
+    }
   }
 
   const uploadNow = async (file: File) => {
@@ -333,9 +413,14 @@ export function Explorer() {
     if (!uploading) return
     setBusy(true)
     try {
-      // a rejection stays in the dialog, which shows the backend detail
+      // a rejection stays in the dialog, which shows the backend detail;
+      // a lack of space is tela 05, over the window
       await upload(uploading.file, name)
       setUploading(null)
+    } catch (e) {
+      if (!(e instanceof ShortageError)) throw e
+      setUploading(null)
+      fail(e)
     } finally {
       setBusy(false)
     }
@@ -589,6 +674,8 @@ export function Explorer() {
   const doRename = canRename ? () => startRename() : undefined
   const doProperties = canOpen && !busy && single ? () => setProperties(single) : undefined
   const doCheck = !locked && !busy ? () => setChecking(true) : undefined
+  const doFormat =
+    !readingFat && !busy ? () => setFormatting(noDisk ? 'required' : 'normal') : undefined
 
   // items without onSelect render disabled until their phase lands
   const menus: Menu[] = [
@@ -634,7 +721,7 @@ export function Explorer() {
     {
       label: 'Disco',
       items: [
-        { label: 'Formatar…' },
+        { label: 'Formatar…', onSelect: doFormat },
         { label: 'Verificar disco', onSelect: doCheck },
         { separator: true },
         { label: 'Inspetor de disco' },
@@ -645,15 +732,21 @@ export function Explorer() {
 
   const toolbar: ToolbarAction[][] = [
     [
-      { label: 'Voltar', icon: 'back', onClick: nav.goBack, disabled: !nav.canGoBack },
+      { label: 'Voltar', icon: 'back', onClick: nav.goBack, disabled: locked || !nav.canGoBack },
       {
         label: 'Avançar',
         icon: 'forward',
         iconOnly: true,
         onClick: nav.goForward,
-        disabled: !nav.canGoForward,
+        disabled: locked || !nav.canGoForward,
       },
-      { label: 'Acima', icon: 'up', iconOnly: true, onClick: goUp, disabled: current === '/' },
+      {
+        label: 'Acima',
+        icon: 'up',
+        iconOnly: true,
+        onClick: goUp,
+        disabled: locked || current === '/',
+      },
     ],
     [
       { label: 'Abrir', onClick: openSelected, disabled: !canOpen },
@@ -666,7 +759,10 @@ export function Explorer() {
       { label: 'Excluir', onClick: doDelete, disabled: !doDelete },
       { label: 'Propriedades', onClick: doProperties, disabled: !doProperties },
     ],
-    [{ label: 'Formatar…' }, { label: 'Verificar disco', onClick: doCheck, disabled: !doCheck }],
+    [
+      { label: 'Formatar…', onClick: doFormat, disabled: !doFormat },
+      { label: 'Verificar disco', onClick: doCheck, disabled: !doCheck },
+    ],
   ]
 
   // build-frontend.md, "Context menu": the items depend on what was clicked
@@ -799,7 +895,8 @@ export function Explorer() {
   return (
     <ExplorerWindow title={noDisk ? 'Simulador FAT' : `${toDosPath(current)} (Simulador FAT)`}>
       <MenuBar menus={menus} />
-      <Toolbar groups={toolbar} disabled={locked} />
+      {/* every button checks locked itself, so Formatar can stay on in tela 17 */}
+      <Toolbar groups={toolbar} disabled={readingFat} />
       <AddressBar
         value={noDisk ? '(nenhum disco)' : toDosPath(current)}
         history={nav.visited.map(toDosPath)}
@@ -884,10 +981,20 @@ export function Explorer() {
       {checking && <CheckReport fat={fat.data?.entradas} onClose={() => setChecking(false)} />}
       {/* the computer's file picker; Arquivo > Enviar arquivo clicks it */}
       <input ref={fileInput} type="file" hidden onChange={onFilePicked} />
+      {formatting && (
+        <FormatDialog
+          required={formatting === 'required'}
+          onFormatted={onFormatted}
+          onClose={() => setFormatting(null)}
+        />
+      )}
       {failure && (
         <ErrorDialog
           title={failure.title}
           message={failure.message}
+          lead={failure.lead}
+          facts={failure.facts}
+          note={failure.note}
           onRetry={failure.retry}
           onClose={() => setFailure(null)}
         />

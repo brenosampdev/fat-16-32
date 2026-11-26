@@ -5,6 +5,8 @@ import { ApiError } from './src/api/client'
 import { corromper, mockApi, resetar, semear } from './src/api/mock'
 import { base64ToBytes, bytesToBase64, fragmentado } from './src/api/paths'
 import { chainFromFat } from './src/lib/chain'
+import { describeShortage } from './src/lib/errors'
+import { describeCapacity, parseClusterCount, planFormat, shortSize } from './src/lib/format'
 import {
   countStates,
   describeJump,
@@ -322,6 +324,71 @@ async function main() {
   corromper()
   const fatCorrompida = (await mockApi.diskFat()).entradas
   ok(describeOccupants([livre], fatCorrompida, donos) === 'sem dono', 'cluster ocupado que ninguem alcanca')
+
+  console.log('\n21. Disco (fase 6): formatar e espaco insuficiente')
+  const p16 = planFormat('fat16', 512, 256)
+  ok(
+    p16.capacity === 131072 && p16.first === 2 && p16.last === 257 && p16.rootMax === 64,
+    'tela 08: 131.072 B, clusters 2-257, raiz fixa de 64',
+  )
+  ok(p16.fatEntries === 258 && p16.fatBytes === 516, 'FAT16: (256 + 2) entradas de 2 B = 516 B')
+  ok(p16.fatRegion === 1024 && p16.dataOffset === 1536, 'regiao da FAT arredondada para 2 clusters')
+  const p32 = planFormat('fat32', 512, 1024)
+  ok(p32.fatBytes === 4104 && p32.rootMax === null, 'FAT32: 1026 entradas de 4 B, raiz como cadeia')
+  // 5120 is what the real backend answered for FAT32 / 512 / 1024
+  ok(p32.dataOffset === 5120, 'data_offset do FAT32 1024 igual ao do backend (5120)')
+  for (const [variante, cs, n] of [
+    ['fat16', 512, 256],
+    ['fat32', 512, 1024],
+    ['fat16', 64, 1],
+    ['fat32', 2048, 300],
+  ] as const) {
+    const real = await mockApi.formatDisk({ variante, cluster_size: cs, num_clusters: n })
+    const plano = planFormat(variante, cs, n)
+    ok(
+      real.dataOffset === plano.dataOffset && real.espacoTotal === plano.capacity && real.numClusters === n,
+      `planFormat bate com o mock em ${variante} / ${cs} B / ${n}`,
+    )
+  }
+  ok('value' in parseClusterCount(' 256 ') && (parseClusterCount(' 256 ') as { value: number }).value === 256, 'contagem valida')
+  for (const t of ['0', '1025', '12a', '', '-3', '2.5']) ok('error' in parseClusterCount(t), `contagem recusada: ${JSON.stringify(t)}`)
+  ok(describeCapacity(131072) === '131.072 bytes (128 KB)', 'capacidade da tela 08')
+  ok(describeCapacity(131072, 'B') === '131.072 B (128 KB)', 'capacidade da tela 17')
+  ok(describeCapacity(64) === '64 bytes' && shortSize(1536) === '1,5 KB' && shortSize(2097152) === '2 MB', 'KB e MB')
+
+  // tela 05 with the mockup's numbers: 220 free, a file of 300 clusters
+  await mockApi.formatDisk({ variante: 'fat16', cluster_size: 512, num_clusters: 256 })
+  await mockApi.createFile('/base.bin')
+  await mockApi.write('/base.bin', bytesToBase64(new Uint8Array(35 * 512)))
+  ok((await mockApi.diskInfo()).clustersLivres === 220, '220 clusters livres antes do video.avi')
+  await mockApi.createFile('/video.avi')
+  let recusa: unknown = null
+  try {
+    await mockApi.write('/video.avi', bytesToBase64(new Uint8Array(300 * 512)))
+  } catch (e) {
+    recusa = e
+  }
+  ok(
+    recusa instanceof ApiError &&
+      recusa.status === 400 &&
+      recusa.message === 'Espaço insuficiente: precisamos de 300 cluster(s) a mais.',
+    'escrita recusada com 400 e a mensagem do backend',
+  )
+  ok((await mockApi.diskInfo()).clustersLivres === 220, 'alocacao atomica: nenhum cluster foi alocado')
+  const tela05 = describeShortage({
+    name: 'video.avi',
+    dir: '/',
+    needed: 300,
+    free: 220,
+    clusterSize: 512,
+    untouched: true,
+  })
+  ok(tela05.lead === 'Não foi possível criar "video.avi" em A:\\.', 'tela 05: frase de abertura')
+  ok(
+    tela05.facts[0][1] === '300 clusters (153.600 B)' && tela05.facts[1][1] === '220 clusters (112.640 B)',
+    'tela 05: necessario e livre',
+  )
+  ok(tela05.note === 'Nenhum cluster foi alocado.', 'tela 05: nota da alocacao atomica')
 
   console.log(falhas === 0 ? '\nTUDO OK\n' : `\n${falhas} FALHA(S)\n`)
   process.exit(falhas === 0 ? 0 : 1)

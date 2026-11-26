@@ -11,9 +11,15 @@ const USANDO_MOCK = import.meta.env?.VITE_MOCK === '1'
 
 export const api: FatApi = USANDO_MOCK ? mockApi : httpApi
 
-/** Chame uma vez no bootstrap. Com o back real, nao faz nada. */
+/**
+ * Chame uma vez no bootstrap. Com o back real, nao faz nada. No mock,
+ * `?sem-disco` na URL pula a semente: o mock abre sem disco, como o back
+ * sem `fat_disk.img` (tela 17).
+ */
 export async function prepararApi(): Promise<void> {
-  if (USANDO_MOCK) await semear()
+  const semDisco =
+    typeof location !== 'undefined' && new URLSearchParams(location.search).has('sem-disco')
+  if (USANDO_MOCK && !semDisco) await semear()
 }
 
 export { USANDO_MOCK }

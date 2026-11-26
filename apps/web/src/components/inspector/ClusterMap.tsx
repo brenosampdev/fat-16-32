@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 
 import { clusterState } from '../../api'
 import type { FatEntry } from '../../api'
+import { formatCount } from '../../lib/content'
 import { cls } from '../../lib/display'
 import { countStates } from '../../lib/inspect'
 
@@ -29,8 +30,13 @@ const LEGEND = [
   { state: 'defeituoso', label: 'Defeituoso' },
 ] as const
 
-/** 32 cells per row up to 256 clusters; 64 per row above that (telas.md, tela 19). */
-const layout = (n: number) => (n <= 256 ? { cols: 32, cell: 13 } : { cols: 64, cell: 8 })
+/**
+ * 32 cells per row up to 256 clusters; 64 per row above that, in a taller
+ * map labelled every other row, as 8 px rows are too close for the numbers
+ * (telas.md, tela 19).
+ */
+const layout = (n: number) =>
+  n <= 256 ? { cols: 32, cell: 13, dense: false } : { cols: 64, cell: 8, dense: true }
 
 /** cluster -> 'sel-a' | 'sel-a-fim' | 'sel-b' | 'sel-b-fim'. A later chain wins a shared cluster. */
 function litClasses(lit: readonly MapLit[]): Map<number, string> {
@@ -50,14 +56,14 @@ function litClasses(lit: readonly MapLit[]): Map<number, string> {
 export function ClusterMap({ entries, total, first = 2, lit = [], footer }: Props) {
   const count = entries?.length ?? total ?? 0
   const start = entries?.[0]?.cluster ?? first
-  const { cols, cell } = layout(count)
+  const { cols, cell, dense } = layout(count)
   const rows = Math.ceil(count / cols)
   const counts = useMemo(() => (entries ? countStates(entries) : null), [entries])
   const lighted = useMemo(() => litClasses(lit), [lit])
   const pair = lit.some((l) => l.tone === 'b')
 
   return (
-    <section className="clustermap" aria-label="Mapa de clusters">
+    <section className={cls('clustermap', dense && 'dense')} aria-label="Mapa de clusters">
       <header className="clustermap-head">
         <strong>
           Mapa de clusters{count > 0 && ` (${start}–${start + count - 1})`}
@@ -67,7 +73,7 @@ export function ClusterMap({ entries, total, first = 2, lit = [], footer }: Prop
             <li key={l.state}>
               <span className={cls('cell', l.state)} />
               {l.label}
-              {counts && <span className="legend-count">{counts[l.state]}</span>}
+              {counts && <span className="legend-count">{formatCount(counts[l.state])}</span>}
             </li>
           ))}
           <li>
@@ -87,7 +93,7 @@ export function ClusterMap({ entries, total, first = 2, lit = [], footer }: Prop
       <div className="clustermap-body" style={{ ['--cell' as string]: `${cell}px` }}>
         <div className="clustermap-rows" aria-hidden="true">
           {Array.from({ length: rows }, (_, r) => (
-            <span key={r}>{start + r * cols}</span>
+            <span key={r}>{dense && r % 2 === 1 ? '' : start + r * cols}</span>
           ))}
         </div>
         <div className="clustermap-grid" style={{ gridTemplateColumns: `repeat(${cols}, ${cell}px)` }}>
