@@ -1,0 +1,16 @@
+Notas de aula - sistemas de arquivos (900 bytes)
+Linha 001: texto de exemplo para ocupar clusters do disco.
+Linha 002: texto de exemplo para ocupar clusters do disco.
+Linha 003: texto de exemplo para ocupar clusters do disco.
+Linha 004: texto de exemplo para ocupar clusters do disco.
+Linha 005: texto de exemplo para ocupar clusters do disco.
+Linha 006: texto de exemplo para ocupar clusters do disco.
+Linha 007: texto de exemplo para ocupar clusters do disco.
+Linha 008: texto de exemplo para ocupar clusters do disco.
+Linha 009: texto de exemplo para ocupar clusters do disco.
+Linha 010: texto de exemplo para ocupar clusters do disco.
+Linha 011: texto de exemplo para ocupar clusters do disco.
+Linha 012: texto de exemplo para ocupar clusters do disco.
+Linha 013: texto de exemplo para ocupar clusters do disco.
+Linha 014: texto de exemplo para ocupar clusters do disco.
+Linha 015: texto de exem

@@ -1,6 +1,9 @@
 // Smoke test do mock: roda com `npx tsx smoke.ts`.
 // Nao faz parte do projeto final — e so para provar que o mock obedece o contrato.
 
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
 import { ApiError } from './src/api/client'
 import { corromper, mockApi, resetar, semear } from './src/api/mock'
 import { base64ToBytes, bytesToBase64, fragmentado } from './src/api/paths'
@@ -389,6 +392,45 @@ async function main() {
     'tela 05: necessario e livre',
   )
   ok(tela05.note === 'Nenhum cluster foi alocado.', 'tela 05: nota da alocacao atomica')
+
+  // the demo script with the very files it uses: if a change stops the
+  // fragmentation from happening on stage, this fails first
+  console.log('\n22. Roteiro de demonstracao (docs/demo/roteiro.md)')
+  const demo = (name: string) =>
+    bytesToBase64(
+      new Uint8Array(readFileSync(fileURLToPath(new URL(`../../docs/demo/${name}`, import.meta.url)))),
+    )
+  const upload = async (path: string, name: string) => {
+    await mockApi.createFile(path)
+    await mockApi.write(path, demo(name))
+    return (await mockApi.chain(path)).cadeia
+  }
+  await mockApi.formatDisk({ variante: 'fat16', cluster_size: 512, num_clusters: 256 })
+  ok((await mockApi.mkdir('/DOCS')).primeiro_cluster === 3, 'passo 2: /DOCS no cluster 3')
+  ok((await upload('/DOCS/ata.txt', 'ata.txt')).join() === '4,5,6', 'passo 2: ata.txt em 4-6')
+  ok((await upload('/DOCS/notas.txt', 'notas.txt')).join() === '7,8', 'passo 2: notas.txt em 7-8')
+  await mockApi.remove('/DOCS/ata.txt')
+  ok((await mockApi.diskInfo()).clustersLivres === 252, 'passo 3: buraco de 3 clusters (252 livres)')
+  const relDemo = await upload('/DOCS/relatorio.txt', 'relatorio.txt')
+  ok(relDemo.join() === '4,5,6,9,10' && fragmentado(relDemo), `passo 4: relatorio.txt fragmentado: [${relDemo}]`)
+  ok((await mockApi.chain('/DOCS/relatorio.txt')).slack_interno === 260, 'passo 5: slack 5 x 512 - 2300 = 260')
+  const fatAntes = JSON.stringify(await mockApi.diskFat())
+  await mockApi.overwrite('/DOCS/relatorio.txt', 1530, txt('## TRECHO NOVO ##'))
+  ok(JSON.stringify(await mockApi.diskFat()) === fatAntes, 'passo 6: sobrescrever atravessando o salto 6 -> 9 nao muda a FAT')
+  const lido = await mockApi.readFile('/DOCS/relatorio.txt')
+  ok(
+    lido.tamanho === 2300 && lido.conteudo_texto.slice(1530, 1547) === '## TRECHO NOVO ##',
+    'passo 6: o conteudo mudou no lugar',
+  )
+  await mockApi.replace('/DOCS/relatorio.txt', txt('Versao curta do relatorio.'))
+  ok((await mockApi.chain('/DOCS/relatorio.txt')).cadeia.join() === '4', 'passo 7: a cadeia encolhe para [4]')
+  ok((await mockApi.diskInfo()).clustersLivres === 251, 'passo 7: 5, 6, 9 e 10 voltam a ficar livres')
+  ok((await mockApi.diskCheck()).consistente, 'passo 8: disco consistente')
+  const fat32 = await mockApi.formatDisk({ variante: 'fat32', cluster_size: 512, num_clusters: 1024 })
+  ok(
+    fat32.clustersLivres === 1023 && fat32.rootMaxEntradas === null && fat32.dataOffset === 5120,
+    'passo 9: FAT32 com 1024 clusters, raiz como cadeia',
+  )
 
   console.log(falhas === 0 ? '\nTUDO OK\n' : `\n${falhas} FALHA(S)\n`)
   process.exit(falhas === 0 ? 0 : 1)
