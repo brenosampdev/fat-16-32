@@ -8,6 +8,9 @@ tela. Ensaiado em 26/11/2026 contra o backend real, e coberto pela seção 22 do
 
 - Rode `npm run dev`. O frontend precisa falar com o backend real: apague a linha
   `VITE_MOCK=1` de `apps/web/.env.development`.
+- A página abre no boot e depois no Bem-vindo: clique em **Usuário** (ou abra com
+  `?sem-boot`, que pula os dois). O Explorer abre em `A:\`.
+- Prefira o navegador em tela cheia (**F11**). Em tela pequena o Explorer já abre maximizado.
 - O passo 1 formata o disco: tudo o que estiver em `apps/api/fat_disk.img` é apagado.
 - Os arquivos a enviar estão nesta pasta:
 

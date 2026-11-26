@@ -23,6 +23,12 @@ import {
   usedInLast,
 } from './src/lib/inspect'
 
+import { checkBalloon, formattedBalloon } from './src/lib/balloons'
+import { clampMenu, formatZoom, parseZoom, stepZoom } from './src/lib/zoom'
+import { mutePref, zoomPref } from './src/lib/prefs'
+import { startPhase } from './src/lib/session'
+import { EMPTY_DESK, clampPos, deskReducer, fits, initialPos, takesKeys, topVisible } from './src/lib/windows'
+
 let falhas = 0
 const ok = (cond: boolean, msg: string) => {
   if (!cond) {
@@ -431,6 +437,90 @@ async function main() {
     fat32.clustersLivres === 1023 && fat32.rootMaxEntradas === null && fat32.dataOffset === 5120,
     'passo 9: FAT32 com 1024 clusters, raiz como cadeia',
   )
+
+  console.log('\n23. Janelas (area de trabalho XP)')
+  const vp = { width: 1280, height: 690 }
+  let d = deskReducer(EMPTY_DESK, { type: 'open', kind: 'explorer', pos: initialPos('explorer', vp, 0) })
+  const ex = d.windows[0]
+  ok(d.windows.length === 1 && d.activeId === ex.id && ex.title === 'Simulador FAT', 'abrir o Explorer: uma janela, ativa')
+  ok(ex.pos.x === 210 && ex.pos.y === 35, 'Explorer centralizado acima da barra de tarefas')
+  d = deskReducer(d, { type: 'open', kind: 'explorer', pos: { x: 0, y: 0 } })
+  ok(d.windows.length === 1 && d.windows[0].pos.x === 210, 'instancia unica: reabrir nao cria outra')
+  d = deskReducer(d, { type: 'open', kind: 'recycle', pos: initialPos('recycle', vp, 1) })
+  const rc = d.windows[1]
+  ok(d.activeId === rc.id && rc.z > ex.z, 'Lixeira abre ativa e no topo')
+  ok(takesKeys(d, rc.id) && !takesKeys(d, ex.id), 'so a janela ativa recebe teclas')
+  d = deskReducer(d, { type: 'taskbar', id: rc.id })
+  ok(d.windows[1].minimized && d.activeId === ex.id, 'botao da ativa minimiza e ativa a proxima')
+  ok(!takesKeys(d, rc.id), 'minimizada nao recebe teclas')
+  d = deskReducer(d, { type: 'taskbar', id: rc.id })
+  ok(!d.windows[1].minimized && d.activeId === rc.id, 'botao da minimizada restaura e ativa')
+  d = deskReducer(d, { type: 'activate', id: ex.id })
+  ok(d.windows[0].z > d.windows[1].z, 'ativar traz para o topo')
+  d = deskReducer(d, { type: 'toggleMaximize', id: ex.id })
+  d = deskReducer(d, { type: 'move', id: ex.id, pos: { x: 5, y: 5 } })
+  ok(d.windows[0].maximized && d.windows[0].pos.x === 210, 'maximizada nao arrasta')
+  d = deskReducer(d, { type: 'minimize', id: ex.id })
+  d = deskReducer(d, { type: 'taskbar', id: ex.id })
+  ok(d.windows[0].maximized && !d.windows[0].minimized, 'restaurar volta maximizada')
+  d = deskReducer(d, { type: 'retitle', id: ex.id, title: 'A:\\DOCS (Simulador FAT)' })
+  ok(d.windows[0].title === 'A:\\DOCS (Simulador FAT)', 'titulo acompanha a pasta')
+  d = deskReducer(d, { type: 'deactivate' })
+  ok(d.activeId === null && !takesKeys(d, ex.id), 'clique na area de trabalho desativa todas')
+  d = deskReducer(d, { type: 'activate', id: ex.id })
+  d = deskReducer(d, { type: 'close', id: ex.id })
+  ok(d.windows.length === 1 && d.activeId === rc.id, 'fechar a ativa ativa a proxima visivel')
+  d = deskReducer(d, { type: 'minimize', id: rc.id })
+  ok(d.activeId === null && topVisible(d) === null, 'tudo minimizado: nenhuma ativa')
+  const lim = clampPos({ x: -5000, y: 5000 }, { width: 860, height: 620 }, vp)
+  ok(lim.x === 120 - 860 && lim.y === 690 - 28, 'barra de titulo sempre alcancavel acima da barra de tarefas')
+  d = deskReducer({ ...d, windows: d.windows.map((w) => ({ ...w, pos: { x: 3000, y: 3000 } })) }, { type: 'clampAll', viewport: vp })
+  ok(d.windows[0].pos.x === 1280 - 120 && d.windows[0].pos.y === 690 - 28, 'janela fora da tela volta ao redimensionar')
+  ok(fits('explorer', { width: 1366, height: 738 }), 'Explorer cabe em 1366x768 em tela cheia')
+  ok(!fits('explorer', { width: 1366, height: 600 }), 'Explorer nao cabe em altura menor que 620')
+  ok(!fits('explorer', { width: 800, height: 700 }), 'Explorer nao cabe em largura menor que 860')
+  const pequena = { width: 1366, height: 600 }
+  const pos = initialPos('explorer', pequena, 0)
+  const cheia = deskReducer(EMPTY_DESK, { type: 'open', kind: 'explorer', pos, maximized: !fits('explorer', pequena) })
+  ok(cheia.windows[0].maximized && cheia.windows[0].pos.y === 0, 'sem espaco o Explorer abre maximizado')
+  const normal = deskReducer(EMPTY_DESK, { type: 'open', kind: 'explorer', pos })
+  ok(!normal.windows[0].maximized, 'sem o sinal abre restaurado')
+  const reaberta = deskReducer(normal, { type: 'open', kind: 'explorer', pos, maximized: true })
+  ok(reaberta.windows.length === 1 && !reaberta.windows[0].maximized, 'reabrir a instancia unica nao muda o estado')
+  const restaurada = deskReducer(cheia, { type: 'toggleMaximize', id: cheia.windows[0].id })
+  ok(!restaurada.windows[0].maximized && restaurada.windows[0].pos === pos, 'restaurar volta a posicao de abertura')
+
+  console.log('\n24. Zoom e preferencias')
+  ok(stepZoom(1, 1) === 1.1 && stepZoom(1, -1) === 0.9, 'um passo para cada lado')
+  ok(stepZoom(2, 1) === 2 && stepZoom(0.75, -1) === 0.75, 'para nos extremos 75% e 200%')
+  ok(stepZoom(1.3, 1) === 1.5 && stepZoom(1.3, -1) === 1.25, 'valor fora da lista vai ao passo vizinho')
+  ok(parseZoom('1.5') === 1.5 && parseZoom('abc') === 1 && parseZoom('3') === 1 && parseZoom(null) === 1, 'zoom guardado invalido volta a 100%')
+  ok(formatZoom(1.5) === '150%' && formatZoom(0.9) === '90%', 'porcentagem')
+  zoomPref.set(1.25)
+  ok(zoomPref.get() === 1.25, 'preferencia funciona sem localStorage')
+  zoomPref.set(1)
+  ok(mutePref.get() === false, 'som comeca ligado')
+  {
+    // own block: section 16 already has a `sem`
+    const tela = { width: 1280, height: 720 }
+    const sem = clampMenu({ x: 100, y: 100 }, { width: 200, height: 300 }, tela, 1)
+    ok(sem.x === 100 && sem.y === 100, 'menu cabe: abre no ponteiro')
+    const z2 = clampMenu({ x: 1100, y: 600 }, { width: 200, height: 300 }, tela, 2)
+    ok(z2.x === 450 && z2.y === 150, 'zoom 200%: vira para a esquerda e para cima, em px CSS')
+    const z2ok = clampMenu({ x: 300, y: 200 }, { width: 200, height: 300 }, tela, 2)
+    ok(z2ok.x === 150 && z2ok.y === 100, 'zoom 200%: ponteiro dividido pelo zoom')
+  }
+  ok(startPhase('', false) === 'boot' && startPhase('?sem-boot', false) === 'desktop', 'inicializacao: ?sem-boot pula')
+  ok(startPhase('', true) === 'desktop', 'ja logado nesta aba vai direto')
+  ok(startPhase('?sem-disco&sem-boot', false) === 'desktop' && startPhase('?sem-disco', false) === 'boot', 'sem-boot convive com sem-disco')
+
+  console.log('\n25. Baloes da bandeja')
+  const info32 = await mockApi.formatDisk({ variante: 'fat32', cluster_size: 512, num_clusters: 1024 })
+  ok(formattedBalloon(info32).text === 'FAT32 · 1.023 clusters livres', 'balao de formatacao com os numeros do disco')
+  ok(checkBalloon({ consistente: true, erros: [] }).text === 'Nenhum problema encontrado.', 'verificacao limpa')
+  ok(checkBalloon({ consistente: false, erros: ['a'] }).text === '1 problema encontrado.' &&
+     checkBalloon({ consistente: false, erros: ['a', 'b'] }).text === '2 problemas encontrados.', 'singular e plural')
+  ok(checkBalloon({ consistente: false, erros: ['a'] }).icon === 'warning', 'problema usa icone de aviso')
 
   console.log(falhas === 0 ? '\nTUDO OK\n' : `\n${falhas} FALHA(S)\n`)
   process.exit(falhas === 0 ? 0 : 1)

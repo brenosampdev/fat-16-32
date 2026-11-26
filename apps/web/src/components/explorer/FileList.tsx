@@ -27,6 +27,8 @@ type Props = {
   /** already sorted */
   entries: LsEntry[]
   sort: SortState
+  /** the window holding the list takes the keyboard: active and not minimized */
+  active: boolean
   selected: ReadonlySet<string>
   /** dotted outline; the keyboard moves from here */
   focus: string | null
@@ -50,6 +52,7 @@ export function FileList({
   dir,
   entries,
   sort,
+  active,
   selected,
   focus,
   cut,
@@ -74,18 +77,28 @@ export function FileList({
     revealIn(box, box?.querySelector('tbody tr.focused') ?? null, headRef.current?.offsetHeight)
   }, [focus, entries])
 
-  useEffect(() => () => window.clearTimeout(slowTimer.current), [])
+  // a pending slow click dies with the folder it was made in: Abrir on a
+  // folder (toolbar, menu) leaves the focus in the list, and the rename would
+  // otherwise start on a row of the folder just left
+  useEffect(() => () => window.clearTimeout(slowTimer.current), [dir])
 
   // The rename field takes the focus with it when it goes away; give it back to
   // the list so the arrows keep working, unless the user clicked somewhere else.
+  // A click on the desktop also ends the rename with the focus on body: the
+  // window is inactive by then, and its list must not take the keys back.
+  // `active` is read, not a dependency: activating the window again must not
+  // pull the focus into the list.
   const isRenaming = !!renaming
   useEffect(() => {
-    if (!isRenaming && document.activeElement === document.body) boxRef.current?.focus()
+    if (!isRenaming && active && document.activeElement === document.body) boxRef.current?.focus()
   }, [isRenaming])
 
   const paths = entries.map((x) => joinPath(dir, x.nome))
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    // any key cancels a pending slow click: Enter opens the file, and the
+    // rename must not start behind the viewer
+    window.clearTimeout(slowTimer.current)
     // keys typed in the rename field belong to it
     if (notice || entries.length === 0 || e.target !== e.currentTarget) return
     // Alt combinations belong to the window: Alt+Enter is Propriedades, not Abrir
@@ -134,7 +147,11 @@ export function FileList({
 
   const onNameClick = (e: MouseEvent, path: string) => {
     if (e.detail !== 1 || wasAlone.current !== path) return
-    slowTimer.current = window.setTimeout(() => onSlowClick?.(path), SLOW_CLICK_MS)
+    // only if the focus is still in the list: a dialog opened meanwhile (from
+    // the toolbar, a menu) holds it, and the field would take it from there
+    slowTimer.current = window.setTimeout(() => {
+      if (boxRef.current?.contains(document.activeElement)) onSlowClick?.(path)
+    }, SLOW_CLICK_MS)
   }
 
   const rowAt = (target: EventTarget) =>

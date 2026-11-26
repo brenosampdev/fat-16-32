@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 
-import type { FatEntry } from '../../api'
+import type { DiskCheck, FatEntry } from '../../api'
 import { useDiskCheck } from '../../api/queries'
 import { DRIVE, formatDateTimeFull } from '../../lib/display'
 import { messageOf } from '../../lib/errors'
@@ -12,6 +12,8 @@ type Props = {
   /** the window's FAT, for the cluster counts of a clean report */
   fat: FatEntry[] | undefined
   onClose: () => void
+  /** once after each completed run, the first one and each Verificar novamente; not after an error */
+  onResult?: (r: DiskCheck) => void
 }
 
 /**
@@ -35,13 +37,16 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  * Each problem is shown as the backend wrote it. There is no Corrigir:
  * the backend only detects.
  */
-export function CheckReport({ fat, onClose }: Props) {
+export function CheckReport({ fat, onClose, onResult }: Props) {
   const check = useDiskCheck()
   const textId = useId()
   const [copied, setCopied] = useState<string | null>(null)
   // a report from an earlier opening may sit in the cache: never shown
   const [ran, setRan] = useState(false)
   const closeRef = useRef<HTMLButtonElement>(null)
+  // when the last reported answer arrived; starts at the cached one, so an
+  // earlier opening's answer, kept by a failed run, is never reported
+  const reportedAt = useRef(check.dataUpdatedAt)
 
   // expensive and on demand: runs when the dialog opens, never in the background
   useEffect(() => {
@@ -51,6 +56,14 @@ export function CheckReport({ fat, onClose }: Props) {
   const running = !ran || check.isFetching
   const data = running ? undefined : check.data
   const error = !running && check.isError ? messageOf(check.error) : null
+
+  // Each successful run stamps a new dataUpdatedAt: reporting by the stamp
+  // fires once per run, not on a re-render nor on StrictMode's second effect.
+  useEffect(() => {
+    if (!data || error || check.dataUpdatedAt === reportedAt.current) return
+    reportedAt.current = check.dataUpdatedAt
+    onResult?.(data)
+  }, [data, error, check.dataUpdatedAt, onResult])
 
   const again = () => {
     // not disabled while running: a disabled button drops the focus, and Esc with it

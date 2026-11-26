@@ -28,8 +28,12 @@ ensaiado contra o backend real. Não há fase pendente: daqui em diante é corre
 - `src/api/` — client, mock, normalizador e hooks do TanStack Query (`queries.ts`)
 - `src/components/` — `shell/` (janela XP), `explorer/` (árvore e lista), `content/`
   (visualizador e editores), `inspector/` (mapa de clusters, cadeia, verificação), `dialogs/`
+- Área de trabalho do XP: `src/lib/windows.ts` (regras das janelas, sem React),
+  `components/desktop/` (ícones, barra de tarefas, Iniciar, balões), `components/session/`
+  (boot, Bem-vindo, desligar)
 - `src/lib/` — lógica sem React: cadeias, formatação, previsão do efeito de uma escrita
-- `smoke.ts` — uma seção por fase; a seção 22 repete o roteiro de demonstração no mock
+- `smoke.ts` — uma seção por fase (1–22) e por parte da área de trabalho (23–25); a seção 22
+  repete o roteiro de demonstração no mock
 
 ## Fatos da API que quebram código se esquecidos
 

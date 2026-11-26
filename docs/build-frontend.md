@@ -489,33 +489,40 @@ Ele **não** cobre o shell. Tree view, list view, menu bar, toolbar, address bar
 └────────────────────────────────────────────────┘
 ```
 
-Janela única, centralizada, 860×620, levemente arrastável pela title bar. **Não implemente gerenciador de janelas** — múltiplas janelas com z-index, resize e minimizar para taskbar é um projeto inteiro e não acrescenta nada à demonstração do FAT.
+Janela do Explorer: 860×620, aberta centralizada na área acima da barra de tarefas (maximizada quando não cabe), arrastável pela title bar, com minimizar, maximizar e fechar, e sem redimensionar pela borda. A área de trabalho do XP (janelas, barra de tarefas com Iniciar, sessão, zoom, dicas e sons) está especificada em `docs/superpowers/specs/2026-11-26-xp-desktop-design.md`; as regras das janelas ficam em `src/lib/windows.ts`.
 
-A exceção é o Disk Inspector, que abre como segunda janela flutuante.
+A inspeção do disco (mapa de clusters, cadeia, verificação) fica dentro do Explorer, não numa segunda janela.
 
 ### Árvore de componentes
 
 ```
 <App>
-  <Desktop>                        wallpaper azul, ícones opcionais
-    <ExplorerWindow>               chrome XP, arrastável
-      <TitleBar />
-      <MenuBar />                  dropdowns
-      <Toolbar />                  Voltar/Avançar/Acima, Nova pasta, Modos
-      <AddressBar />               path editável
-      <SplitPane>
-        <FolderTree />             só diretórios, lazy load
-        <FileList />               Details | Icons
-      </SplitPane>
-      <StatusBar />
-    </ExplorerWindow>
-
-    <DiskInspectorWindow />        segunda janela, abre pelo menu
-    <Taskbar />                    Iniciar decorativo + relógio
-  </Desktop>
-
-  <ContextMenu />                  portal, posição do cursor
-  <DialogHost />                   portal, um dialog por vez
+  <Session>                        boot, Bem-vindo, Desligar, Em espera, Reiniciar
+    <DeskProvider>                 estado das janelas (lib/windows.ts), balões
+      <Desktop>                    papel de parede
+        <DesktopIcons />           Meu computador, Lixeira
+        <AppWindow>                uma por janela aberta (Explorer, Lixeira); chrome XP, zoom;
+                                   abaixo, o que o Explorer põe dentro da sua
+          <TitleBar />
+          <MenuBar />              dropdowns
+          <Toolbar />              Voltar/Avançar/Acima, Abrir, Nova pasta, Excluir…
+          <AddressBar />           path editável
+          <SplitPane>
+            <FolderTree />         só diretórios, lazy load
+            <FileList />           Detalhes (o modo Ícones fica desabilitado)
+            <ClusterMap />         mapa de clusters, com a cadeia (ChainStrip) no rodapé
+          </SplitPane>
+          <StatusBar />
+          <ContextMenu />          fixo na posição do cursor, sem portal
+          <…Dialog />              diálogos sobre a janela (Modal), sem portal
+        </AppWindow>
+        <Taskbar />                Iniciar, botões das janelas, bandeja (som, relógio)
+        <Balloon />                balão da bandeja
+        <StartMenu />              menu Iniciar funcional
+      </Desktop>
+    </DeskProvider>
+  </Session>
+  <TooltipLayer />                 dicas amarelas no lugar do title nativo
 </App>
 ```
 
@@ -532,14 +539,17 @@ src/
     paths.ts          joinPath, parentOf, validateName, formatação
     index.ts          switch mock/real
   components/
-    shell/            ExplorerWindow, TitleBar, MenuBar, Toolbar,
-                      AddressBar, SplitPane, StatusBar, Desktop, Taskbar
-    explorer/         FolderTree, FileList, ListHeader, ListItem,
-                      IconsView, MarqueeSelect, RenameInput
-    dialogs/          DialogHost, ConfirmDelete, Properties, Format,
-                      Progress, ErrorDialog, FileViewer
-    inspector/        DiskInspectorWindow, ClusterMap, ChainView, CheckReport
-    common/           ContextMenu, Icon, Toolbar primitives
+    shell/            AppWindow, TitleBar, MenuBar, Toolbar, ContextMenu,
+                      AddressBar, SplitPane, StatusBar, Desktop
+    desktop/          DeskContext, DesktopIcons, Taskbar, Tray, StartMenu,
+                      Balloon, RecycleBin, TooltipLayer, kinds
+    session/          Session, BootScreen, WelcomeScreen, ShutdownDialog
+    explorer/         Explorer, FolderTree, TreeItem, FileList, RenameField
+    content/          FileViewer, ContentEditor, HexView, MiniMap
+    dialogs/          Modal, ConfirmDelete, DeleteProgress, MoveDialog,
+                      PropertiesDialog, UploadDialog, FormatDialog, ErrorDialog
+    inspector/        ClusterMap, ChainStrip, CheckReport
+    common/           Icon, ChainChips
   hooks/
     useSelection.ts   seleção múltipla com shift/ctrl
     useHistory.ts     pilhas de Voltar/Avançar
@@ -1153,7 +1163,7 @@ O que separa "inspirado no XP" de "parece o XP" são poucos detalhes concretos.
 | Title bar inativa | gradiente `#7A96DF` → `#A6C3F0` |
 | Fundo de janela | `#ECE9D8` (bege do Luna) |
 | Borda afundada | `#7F9DB9` 1px |
-| Desktop | `#5A7EDC`, ou o wallpaper Bliss |
+| Desktop | papel de parede próprio em CSS/SVG: céu em degradê `#1C5ACB` → `#D9E9FA`, nuvens, morro verde (sem a foto Bliss); `#5A7EDC` só no fundo do `body` |
 | Botão Iniciar | verde `#3C8A2E`, cantos arredondados à direita |
 | Barra de tarefas | gradiente azul `#245EDC` → `#3F8CF3`, 30px |
 | Linhas de grade da lista | `#C4C4C4` |
@@ -1169,19 +1179,16 @@ Detalhes de comportamento que vendem mais que pixel:
 
 ### Ícones e sons
 
-Ícones e sons originais do Windows XP são propriedade da Microsoft. Para trabalho acadêmico, tolerável. Se o repositório for público no GitHub, use ícones livres de estética similar em vez dos arquivos originais.
-
-Para não travar: comece com emoji (`📁` `📄`) ou SVGs simples próprios e troque depois. Ícone não bloqueia nenhuma funcionalidade.
+Ícones e sons são próprios: SVGs desenhados no projeto e sons sintetizados com Web Audio (`lib/sound.ts`), com opção de silenciar. Nenhum arquivo da Microsoft.
 
 ### O que cortar
 
 Estas coisas consomem tempo e não acrescentam nada à demonstração do sistema de arquivos:
 
-- Gerenciador de múltiplas janelas com z-index, resize e minimizar
-- Sequência de boot e sons de inicialização
 - Modos de view Tiles e Thumbnails
-- Menu Iniciar funcional (deixe decorativo)
 - Clippy
+
+(A área de trabalho do XP foi feita depois, em escopo próprio: ver a spec em `docs/superpowers/specs/`.)
 
 ## Ordem de execução
 

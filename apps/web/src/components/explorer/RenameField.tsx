@@ -2,6 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent } from 'react'
 
 import { MAX_NAME } from '../../api'
+import { usePref } from '../../hooks/usePref'
+import { effectiveZoom } from '../../lib/dom'
+import { zoomPref } from '../../lib/prefs'
 import { Icon } from '../common/Icon'
 
 type Props = {
@@ -31,6 +34,8 @@ export function RenameField({ initial, error, busy, onCommit, onCancel, onEdit }
   const sent = useRef<string | null>(null)
   const cancelled = useRef(false)
   const [balloonAt, setBalloonAt] = useState<{ x: number; y: number } | null>(null)
+  /** Ctrl+wheel or Ctrl +/− move the field without a scroll */
+  const [zoom] = usePref(zoomPref)
 
   useEffect(() => {
     const input = inputRef.current
@@ -41,18 +46,23 @@ export function RenameField({ initial, error, busy, onCommit, onCancel, onEdit }
     // selected once, when the field opens
   }, [])
 
-  // the balloon hangs under the field; fixed, so the list's scroll box cannot clip it
+  // The balloon hangs under the field; fixed, so the list's scroll box cannot
+  // clip it. The field's rect is screen px, the balloon's left/top are CSS px
+  // inside the window's zoom.
   useLayoutEffect(() => {
     if (!error) return setBalloonAt(null)
     const place = () => {
-      const r = inputRef.current?.getBoundingClientRect()
-      if (r) setBalloonAt({ x: r.left, y: r.bottom + 3 })
+      const input = inputRef.current
+      if (!input) return
+      const r = input.getBoundingClientRect()
+      const z = effectiveZoom(input)
+      setBalloonAt({ x: r.left / z, y: r.bottom / z + 3 })
     }
     place()
     inputRef.current?.focus()
     window.addEventListener('scroll', place, true)
     return () => window.removeEventListener('scroll', place, true)
-  }, [error])
+  }, [error, zoom])
 
   const flash = () =>
     inputRef.current?.animate(

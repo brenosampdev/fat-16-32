@@ -1,12 +1,12 @@
-import { Explorer } from './components/explorer/Explorer'
-import { Desktop } from './components/shell/Desktop'
+import { TooltipLayer } from './components/desktop/TooltipLayer'
+import { Session } from './components/session/Session'
 
 export function App() {
   return (
     <div className="xp">
-      <Desktop>
-        <Explorer />
-      </Desktop>
+      <Session />
+      {/* outside the session: the tips cover every screen, above all of it */}
+      <TooltipLayer />
     </div>
   )
 }

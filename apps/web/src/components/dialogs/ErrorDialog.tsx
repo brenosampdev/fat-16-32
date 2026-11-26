@@ -1,5 +1,6 @@
-import { useId } from 'react'
+import { useEffect, useId, useRef } from 'react'
 
+import { playSound } from '../../lib/sound'
 import { Icon } from '../common/Icon'
 import { Modal } from './Modal'
 
@@ -18,10 +19,18 @@ type Props = {
   onRetry?: () => void
 }
 
-/** Error box. Enter (on OK) and Esc close it; focus goes back where it was. */
+/** Error box, with the error ding. Enter (on OK) and Esc close it; focus goes back where it was. */
 export function ErrorDialog({ title, message, lead, facts, note, onClose, onRetry }: Props) {
   const messageId = useId()
   const detailed = !!(lead || facts || note)
+  // once per box: StrictMode runs a mount effect twice, and the ref survives that
+  const dinged = useRef(false)
+
+  useEffect(() => {
+    if (dinged.current) return
+    dinged.current = true
+    playSound('error')
+  }, [])
   return (
     <Modal
       title={title}

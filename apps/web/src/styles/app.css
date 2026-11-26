@@ -49,35 +49,549 @@ body {
 
 /* ---------------------------------------------------------------- desktop */
 
+/* The wallpaper, our own drawing (spec, "Papel de parede"): a green hill
+   under a blue sky with soft clouds. It reminds of the reference without
+   being the photo. Layers, top first: the hills (an SVG stretched over the
+   whole screen, transparent above the horizon), the clouds, the sky. */
 .desktop {
   position: fixed;
   inset: 0;
-  overflow: hidden;
-  background: #5a7edc;
+  /* clip, not hidden: a hidden box still scrolls when something under the
+     edge takes focus, and would drag the taskbar layer up with the windows */
+  overflow: clip;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 900' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='b' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%235c9c3c'/%3E%3Cstop offset='1' stop-color='%232b6a25'/%3E%3C/linearGradient%3E%3ClinearGradient id='f' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%2394d34f'/%3E%3Cstop offset='.22' stop-color='%236dba35'/%3E%3Cstop offset='.6' stop-color='%234f9e27'/%3E%3Cstop offset='1' stop-color='%23367d1b'/%3E%3C/linearGradient%3E%3CradialGradient id='h' cx='.3' cy='.04' r='.42'%3E%3Cstop offset='0' stop-color='%23d2f283' stop-opacity='.8'/%3E%3Cstop offset='1' stop-color='%23d2f283' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Cpath d='M560 610C820 520 1130 458 1370 460C1480 461 1560 470 1600 480V900H560z' fill='url(%23b)'/%3E%3Cpath d='M0 525C190 470 390 445 570 458S990 545 1250 625 1540 705 1600 722V900H0z' fill='url(%23f)'/%3E%3Cpath d='M0 525C190 470 390 445 570 458S990 545 1250 625 1540 705 1600 722V900H0z' fill='url(%23h)'/%3E%3C/svg%3E")
+      center / 100% 100% no-repeat,
+    radial-gradient(ellipse 15% 8% at 30% 27%, rgb(255 255 255 / 0.92), rgb(255 255 255 / 0.5) 45%, rgb(255 255 255 / 0) 72%),
+    radial-gradient(ellipse 9% 8% at 24% 23%, rgb(255 255 255 / 0.85), rgb(255 255 255 / 0.4) 45%, rgb(255 255 255 / 0) 72%),
+    radial-gradient(ellipse 8% 7.5% at 35% 21%, rgb(255 255 255 / 0.85), rgb(255 255 255 / 0.4) 45%, rgb(255 255 255 / 0) 72%),
+    radial-gradient(ellipse 6% 6% at 29.5% 17.5%, rgb(255 255 255 / 0.8), rgb(255 255 255 / 0.35) 45%, rgb(255 255 255 / 0) 72%),
+    radial-gradient(ellipse 13% 4.5% at 33% 32%, rgb(255 255 255 / 0.7), rgb(255 255 255 / 0) 70%),
+    radial-gradient(ellipse 10% 4.5% at 71% 15%, rgb(255 255 255 / 0.8), rgb(255 255 255 / 0.35) 45%, rgb(255 255 255 / 0) 72%),
+    radial-gradient(ellipse 5.5% 4.5% at 71% 11.5%, rgb(255 255 255 / 0.75), rgb(255 255 255 / 0) 70%),
+    radial-gradient(ellipse 6% 4% at 67% 12%, rgb(255 255 255 / 0.75), rgb(255 255 255 / 0) 70%),
+    radial-gradient(ellipse 5% 3.5% at 75.5% 12.5%, rgb(255 255 255 / 0.7), rgb(255 255 255 / 0) 70%),
+    radial-gradient(ellipse 26% 2.6% at 60% 40%, rgb(255 255 255 / 0.45), rgb(255 255 255 / 0) 70%),
+    radial-gradient(ellipse 18% 2.2% at 11% 43%, rgb(255 255 255 / 0.4), rgb(255 255 255 / 0) 70%),
+    radial-gradient(ellipse 16% 2.2% at 88% 33%, rgb(255 255 255 / 0.35), rgb(255 255 255 / 0) 70%),
+    linear-gradient(180deg, #1c5acb 0%, #3175de 22%, #5896e8 40%, #8fbff2 53%, #c4ddf7 62%, #d9e9fa 70%);
+  transition: filter 1s;
 }
 
-.desktop-mock-badge {
+/* Desligar o computador: the desktop goes grey over about a second, as on
+   XP, and the colour comes back the same way. Only the desktop: the dialog
+   and the session screens are its siblings. The filter makes .desktop the
+   containing block of the fixed popups inside it, which moves nothing,
+   since it covers the viewport exactly. */
+.desktop.fading {
+  filter: grayscale(1);
+}
+
+/* Windows live here, above the taskbar's 30px. A stacking context of its
+   own, under the taskbar layer: however high a window's z grows, it never
+   competes with the taskbar. It clips at its bottom edge, so the part of a
+   window dragged below it is cut off rather than drawn under the taskbar,
+   and stays cut off while the area is raised (next rule). Clip, not hidden:
+   nothing may scroll it. */
+.desk-area {
   position: absolute;
-  right: 12px;
-  bottom: 8px;
-  color: rgb(255 255 255 / 0.8);
-  text-shadow: 1px 1px 1px rgb(0 0 0 / 0.5);
-  pointer-events: none;
+  inset: 0 0 30px 0;
+  z-index: 1;
+  overflow: clip;
+}
+
+/* Raised over the taskbar only while something pops out of a window: a
+   modal's overlay (spec, layer 5), the context menu and the menu bar's
+   dropdowns (both .menu-dropdown), the address history and the rename error
+   balloon. XP draws these over the taskbar. The window bodies stay clipped
+   above it; only position: fixed popups (the overlay, the context menu, the
+   balloon) escape the clip, since the viewport is their containing block. An
+   absolute one (a menu-bar dropdown, the address history) on a window low on
+   the desk is cut at the edge. The window holding the popup is already the
+   active, top one. */
+.desk-area:has(.dialog-overlay, .menu-dropdown, .addressbar-list, .rename .balloon) {
+  z-index: 3;
+}
+
+/* ---------------------------------------------------------- desktop icons */
+
+/* 32px picture over a label, white with a shadow on the wallpaper; the
+   selected one gets the blue label (spec, "Papel de parede e ícones").
+   (0,3,1) beats .xp button.plano, whose all: unset would drop the position. */
+.xp button.plano.desk-icon {
+  position: absolute;
+  width: 78px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 3px 0;
+  color: #fff;
+  text-align: center;
+  user-select: none;
+}
+
+.xp button.plano.desk-icon-computer {
+  left: 6px;
+  top: 8px;
+}
+
+.xp button.plano.desk-icon-recycle {
+  right: 6px;
+  bottom: 6px;
+}
+
+.desk-icon-image {
+  position: relative;
+  display: flex;
+}
+
+.desk-icon-label {
+  max-width: 100%;
+  padding: 1px 2px;
+  line-height: 13px;
+  text-shadow:
+    1px 1px 1px #000,
+    0 0 3px rgb(0 0 0 / 0.55);
+  overflow-wrap: break-word;
+}
+
+/* the selected picture's blue wash: a copy of it, turned blue, half
+   transparent over the original (a filter on the original alone would
+   rotate every colour, not tint it) */
+.desk-icon-tint {
+  position: absolute;
+  inset: 0;
+  filter: grayscale(1) sepia(1) hue-rotate(180deg) saturate(6) brightness(0.8);
+  opacity: 0.5;
+}
+
+.desk-icon.selected .desk-icon-label {
+  background: #316ac5;
+  text-shadow: none;
+}
+
+/* the focus rectangle goes round the label, as on XP */
+.xp button.plano.desk-icon:focus-visible {
+  outline: none;
+}
+
+.desk-icon:focus-visible .desk-icon-label {
+  outline: 1px dotted #fff;
+}
+
+/* ---------------------------------------------------------------- taskbar */
+
+/* The taskbar layer (z 2, over .desk-area). 30px, #245EDC with the lighter
+   #3F8CF3 band near the top edge that gives XP's bar its rounded look. */
+.taskbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  height: 30px;
+  box-sizing: border-box;
+  border-top: 1px solid #0c3aa6;
+  background: linear-gradient(
+    180deg,
+    #3a7ae8 0,
+    #3f8cf3 2px,
+    #3174e6 5px,
+    #245edc 9px,
+    #245edc calc(100% - 4px),
+    #1d4fc4 100%
+  );
+  user-select: none;
+}
+
+/* green, rounded on the right, "Iniciar" in white bold italic; our own
+   emblem stands where XP had its flag */
+.xp .taskbar button.plano.start-button {
+  flex: none;
+  gap: 5px;
+  height: 100%;
+  padding: 0 20px 1px 8px;
+  border-radius: 0 12px 12px 0;
+  background:
+    radial-gradient(ellipse 70% 45% at 35% 0%, rgb(255 255 255 / 0.28), rgb(255 255 255 / 0) 80%),
+    linear-gradient(180deg, #5fae52 0, #4a9c3d 14%, #3c8a2e 42%, #3a872c 78%, #2e7123 100%);
+  box-shadow:
+    inset 0 1px rgb(255 255 255 / 0.3),
+    inset -2px -1px 3px rgb(0 0 0 / 0.3),
+    2px 0 3px rgb(0 0 0 / 0.3);
+  color: #fff;
+  font:
+    italic bold 16px 'Trebuchet MS',
+    Tahoma,
+    Verdana,
+    sans-serif;
+  letter-spacing: 0.3px;
+  text-shadow: 1px 1px 2px rgb(0 0 0 / 0.55);
+}
+
+.xp .taskbar button.plano.start-button:hover {
+  filter: brightness(1.08);
+}
+
+.xp .taskbar button.plano.start-button:active,
+.xp .taskbar button.plano.start-button[aria-expanded='true'] {
+  filter: brightness(0.88);
+}
+
+/* pushed in while the menu is open */
+.xp .taskbar button.plano.start-button[aria-expanded='true'] {
+  box-shadow:
+    inset 1px 2px 3px rgb(0 0 0 / 0.45),
+    inset -2px -1px 3px rgb(0 0 0 / 0.2),
+    2px 0 3px rgb(0 0 0 / 0.3);
+}
+
+.xp .taskbar button.plano.start-button > svg {
+  filter: drop-shadow(1px 1px 1px rgb(0 0 0 / 0.4));
+}
+
+/* one button per window: at most 160px, shrinking together, with the
+   title cut by an ellipsis, when the bar runs out of room */
+.taskbar-tasks {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px 0 10px;
+}
+
+.xp .taskbar button.plano.task-button {
+  flex: 0 1 160px;
+  min-width: 0;
+  height: 23px;
+  gap: 5px;
+  padding: 0 8px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #4f97f7 0, #3c81f3 20%, #3779ec 80%, #2f6ade 100%);
+  box-shadow:
+    inset 1px 1px rgb(255 255 255 / 0.35),
+    inset -1px -1px rgb(0 0 0 / 0.2),
+    1px 1px 1px rgb(0 0 0 / 0.3);
+  color: #fff;
+}
+
+.xp .taskbar button.plano.task-button:hover {
+  background: linear-gradient(180deg, #66a8fb 0, #529af7 20%, #4b90f2 80%, #3f80e6 100%);
+}
+
+/* the active, visible window: pushed in */
+.xp .taskbar button.plano.task-button.pressed {
+  background: #1e52b7;
+  box-shadow:
+    inset 1px 1px 2px rgb(0 0 0 / 0.55),
+    inset -1px -1px rgb(255 255 255 / 0.12);
+}
+
+.xp .taskbar button.plano.task-button.pressed:hover {
+  background: #2a5fc4;
+}
+
+.xp .taskbar button.plano:focus-visible {
+  outline: 1px dotted #fff;
+}
+
+.task-button > svg {
+  flex: none;
+}
+
+.task-title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ------------------------------------------------------------------- tray */
+
+/* lighter blue, set off from the bar by a bevelled left edge */
+.tray {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px 0 11px;
+  border-left: 1px solid #1042af;
+  background: linear-gradient(
+    180deg,
+    #1a9bea 0,
+    #18b5f2 3px,
+    #139beb 6px,
+    #1290e8 9px,
+    #0d8dea 60%,
+    #0f9eed 85%,
+    #1392e2 94%,
+    #137ed7 100%
+  );
+  box-shadow:
+    inset 1px 0 #18bbff,
+    inset 2px 0 2px rgb(9 70 170 / 0.35);
+  color: #fff;
+}
+
+.tray-icon {
+  display: inline-flex;
+}
+
+.tray-clock {
+  padding: 0 2px 0 4px;
+  white-space: nowrap;
+  text-shadow: 0 1px 1px rgb(0 0 0 / 0.25);
+}
+
+/* The tray balloon (spec, "Balões na bandeja"): right-aligned over the tray,
+   9px above the 30px taskbar, its tail reaching down at the icon left of the
+   clock. A layer of its own in .desktop, z 4 like the Start menu: over the
+   windows and the taskbar, and over .desk-area when a modal or a menu raises
+   it to 3, so it stays visible, and clickable, next to the check report.
+   Before the Start menu in the page, so the menu covers it where they meet.
+   Outside every window, so the window zoom never scales it; inside .desktop,
+   so it greys with it. The slot is empty and unsized while there is no
+   balloon. */
+.tray-balloon-slot {
+  position: absolute;
+  right: 6px;
+  bottom: 39px;
+  z-index: 4;
+  width: max-content;
+  max-width: 300px;
+}
+
+.tray-balloon {
+  position: relative;
+  min-width: 180px;
+  padding: 6px 8px 8px 10px;
+  background: #ffffe1;
+  border: 1px solid #000;
+  border-radius: 7px;
+  box-shadow: 2px 2px 4px rgb(0 0 0 / 0.3);
+  color: #000;
+  text-shadow: none;
+  white-space: normal;
+}
+
+/* the tail: a black triangle, and a yellow one 1px inside it that also
+   hides the box's bottom border where they meet */
+.tray-balloon::before,
+.tray-balloon::after {
+  content: '';
+  position: absolute;
+  border-style: solid;
+  border-color: transparent;
+}
+
+.tray-balloon::before {
+  right: 48px;
+  bottom: -13px;
+  border-width: 13px 0 0 13px;
+  border-top-color: #000;
+}
+
+.tray-balloon::after {
+  right: 49px;
+  bottom: -11px;
+  border-width: 11px 0 0 11px;
+  border-top-color: #ffffe1;
+}
+
+.tray-balloon-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.tray-balloon-head > svg {
+  flex: none;
+}
+
+.tray-balloon-head > strong {
+  flex: 1;
+}
+
+/* XP's small close box: flat until the pointer is over it */
+.xp button.plano.tray-balloon-close {
+  flex: none;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin: -2px -4px 0 4px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.xp button.plano.tray-balloon-close:hover {
+  border-color: #8a8a7a;
+  background: #fff;
+}
+
+.tray-balloon > p {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------- start menu */
+
+/* XP's two-column Start menu, hanging from the Iniciar button: a blue
+   header with the user, an orange rule, a white column for the program and
+   a light blue one for places, a blue footer with the session items. Over
+   the windows and the taskbar (z 4 against their 1-3, inside .desktop). */
+.start-menu {
+  position: absolute;
+  left: 0;
+  bottom: 30px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  max-width: 100%;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #0b4cb8;
+  border-bottom: 0;
+  border-radius: 7px 7px 0 0;
+  box-shadow: 2px 0 6px rgb(0 0 0 / 0.45);
+  user-select: none;
+}
+
+.start-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 58px;
+  padding: 0 8px;
+  background: linear-gradient(180deg, #2c7be8 0, #1868ce 10%, #0e60cb 45%, #0f5bc6 85%, #0b4cb8 100%);
+  color: #fff;
+  font-size: 14px;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px rgb(0 0 0 / 0.55);
+}
+
+.start-picture {
+  display: flex;
+  filter: drop-shadow(1px 1px 1px rgb(0 0 0 / 0.45));
+}
+
+/* the orange rule under the header fades out at both ends */
+.start-columns {
+  display: flex;
+  min-height: 200px;
+  border-top: 2px solid #f39a3d;
+  border-image: linear-gradient(90deg, rgb(243 154 61 / 0.15), #f39a3d 25%, #f39a3d 75%, rgb(243 154 61 / 0.15)) 1;
+}
+
+.start-programs,
+.start-places {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 4px;
+}
+
+.start-places {
+  background: #d3e5fa;
+  border-left: 1px solid #95bdee;
+}
+
+.xp button.plano.start-item {
+  gap: 7px;
+  min-height: 30px;
+  padding: 2px 6px;
+  border-radius: 2px;
+  color: #000;
+}
+
+.xp .start-programs button.plano.start-item {
+  min-height: 40px;
+  font-weight: bold;
+}
+
+.xp .start-places button.plano.start-item {
+  color: #0a246a;
+  font-weight: bold;
+}
+
+.xp .start-menu button.plano.start-item:hover,
+.xp .start-menu button.plano.start-item:focus-visible {
+  background: #316ac5;
+  color: #fff;
+  outline: none;
+}
+
+.start-foot {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  height: 40px;
+  padding: 0 6px;
+  background: linear-gradient(180deg, #4b8ee6 0, #3b85e0 8%, #3a80e0 60%, #2f6bd5 100%);
+}
+
+.xp .start-foot button.plano.start-item {
+  color: #fff;
+}
+
+.xp .start-menu .start-foot button.plano.start-item:hover,
+.xp .start-menu .start-foot button.plano.start-item:focus-visible {
+  background: rgb(255 255 255 / 0.22);
 }
 
 /* ----------------------------------------------------------------- window */
 
-.xp .explorer-window {
+.xp .app-window {
   position: absolute;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
 }
 
-.explorer-window > .title-bar {
+/* kept mounted: the Explorer holds its folder, selection and history */
+.xp .app-window.minimized {
+  display: none;
+}
+
+/* the inline left/top/width/height are dropped while maximized */
+.xp .app-window.maximized {
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* the window holding a modal goes above its siblings; !important beats the
+   inline z-index */
+.app-window:has(.dialog-overlay) {
+  z-index: 2147483000 !important;
+}
+
+.app-window > .title-bar {
   flex: none;
   user-select: none;
   touch-action: none;
+}
+
+/* inactive window (build-frontend.md, "Fidelidade visual"): lighter bar,
+   faded text and caption buttons */
+.app-window.inactive > .title-bar {
+  background: linear-gradient(180deg, #7a96df, #a6c3f0);
+  border-color: #7a96df;
+}
+
+.app-window.inactive > .title-bar .title-bar-text {
+  color: #d8e4f8;
+  text-shadow: none;
+}
+
+.app-window.inactive > .title-bar .title-bar-controls button {
+  opacity: 0.6;
 }
 
 .title-bar-text {
@@ -189,6 +703,8 @@ body {
   gap: 1px;
   height: 36px;
   padding: 0 3px;
+  /* a zoomed window cuts the last buttons off at its edge */
+  overflow: hidden;
 }
 
 .toolbar-separator {
@@ -482,7 +998,8 @@ body {
 
 .filelist {
   flex: 1;
-  min-height: 0;
+  /* a zoomed window shrinks the cluster map first, down to a few rows here */
+  min-height: 64px;
   overflow: auto;
   background: #fff;
   border: 1px solid #7f9db9;
@@ -493,6 +1010,9 @@ body {
 
 .filelist-table {
   width: 100%;
+  /* Nome takes what the fixed columns (394px) leave; a zoomed window keeps
+     it readable and scrolls sideways instead */
+  min-width: 560px;
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
@@ -651,7 +1171,8 @@ body {
 /* ------------------------------------------------------------ cluster map */
 
 .clustermap {
-  flex: none;
+  /* gives way when a zoomed window has no room for it; its grid scrolls */
+  flex: 0 1 auto;
   height: 176px;
   box-sizing: border-box;
   display: flex;
@@ -660,13 +1181,17 @@ body {
   padding: 4px 6px;
   background: #fff;
   border: 1px solid #7f9db9;
+  overflow: hidden;
 }
 
+/* one line; a zoomed window cuts the legend off at the right */
 .clustermap-head {
   flex: none;
   display: flex;
   align-items: center;
   height: 14px;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .clustermap-legend {
@@ -844,25 +1369,67 @@ body {
   text-overflow: ellipsis;
 }
 
+/* The first field takes what the others leave. When even their widths do
+   not fit (a zoomed window), free space and geometry give way first, so the
+   zoom field stays in sight. */
+.xp .status-bar-field.status-main {
+  flex-basis: 0;
+}
+
 .xp .status-bar-field.status-space {
-  flex: 0 0 200px;
+  flex: 0 1 200px;
 }
 
 .xp .status-bar-field.status-disk {
-  flex: 0 0 140px;
+  flex: 0 1 140px;
+}
+
+/* "Zoom: 150%", shown only when the zoom is not 100% */
+.xp .status-bar-field.status-zoom {
+  flex: 0 0 80px;
+}
+
+/* ---------------------------------------------------------------- Lixeira */
+
+/* the list area, white as the Explorer's, with why it is empty in the middle */
+.recycle-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 3px 0;
+  padding: 12px 28px;
+  background: #fff;
+  border: 1px solid #7f9db9;
+  text-align: center;
+  cursor: default;
+}
+
+.recycle-list p {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.recycle-note {
+  color: #6a7282;
 }
 
 /* ---------------------------------------------------------------- dialogs */
 
 /* Modal without dimming: the overlay is transparent and only swallows clicks
    (telas.md, tela 05). Fixed to the viewport, so the dialog stays put while
-   the Explorer window is dragged around under it. */
+   the Explorer window is dragged around under it. A dialog zoomed taller
+   than the screen scrolls, so its buttons stay within reach. */
 .dialog-overlay {
   position: fixed;
   inset: 0;
   z-index: 100;
   display: grid;
   place-items: center;
+  overflow: auto;
 }
 
 .xp .dialog {
@@ -1899,4 +2466,355 @@ body {
 
 .error-detail .facts {
   margin: 2px 0;
+}
+
+/* ---------------------------------------------------------------- session */
+
+/* Boot, Bem-vindo, standby, shutting down and off (spec, layer 6): siblings
+   of .desktop, over it and outside its grey filter. Display text on these
+   screens is larger than the 11px UI, as on XP's logon screens. */
+.session-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  user-select: none;
+}
+
+/* our own logo, no Microsoft mark: the Start emblem and the name */
+.boot-logo,
+.welcome-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.session-logo-text {
+  font:
+    italic bold 34px 'Trebuchet MS',
+    Tahoma,
+    Verdana,
+    sans-serif;
+  letter-spacing: 0.5px;
+}
+
+.session-logo-accent {
+  color: #f7962d;
+}
+
+/* black, the logo and a bar of three blue blocks running left to right */
+.boot-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 56px;
+  background: #000;
+  color: #fff;
+}
+
+.boot-bar {
+  position: relative;
+  width: 124px;
+  height: 14px;
+  overflow: hidden;
+  border: 1px solid #b2b2b2;
+  border-radius: 4px;
+}
+
+/* the gaps between the blocks are drawn in black over one blue gradient */
+.boot-blocks {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  width: 25px;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 7px, #000 7px 9px),
+    linear-gradient(180deg, #2838c7 0, #5f8dff 45%, #3a5cf0 60%, #2838c7 100%);
+  animation: boot-run 1.6s linear infinite;
+}
+
+@keyframes boot-run {
+  from {
+    transform: translateX(-27px);
+  }
+  to {
+    transform: translateX(126px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot-blocks {
+    left: 49px;
+    animation: none;
+  }
+}
+
+/* Bem-vindo: dark blue bands, the blue field with a light glow at the top
+   left, a fading vertical rule between the logo and the user tile */
+.welcome-screen {
+  display: flex;
+  flex-direction: column;
+  background: #5a7edc;
+  color: #fff;
+}
+
+.welcome-band {
+  flex: none;
+  height: 78px;
+  background: #00309c;
+}
+
+.welcome-top {
+  border-bottom: 2px solid #8fb2f0;
+  border-image: linear-gradient(90deg, #00309c, #8fb2f0 30%, #c6d8fa 50%, #8fb2f0 70%, #00309c) 1;
+}
+
+.welcome-bottom {
+  border-top: 2px solid #f7962d;
+  border-image: linear-gradient(90deg, #00309c, #f7962d 30%, #fbbd6f 50%, #f7962d 70%, #00309c) 1;
+}
+
+.welcome-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-height: 0;
+  background:
+    radial-gradient(ellipse 45% 55% at 0 0, rgb(160 190 245 / 0.75), rgb(160 190 245 / 0) 100%),
+    #5a7edc;
+}
+
+.welcome-left {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 18px;
+  padding-right: 36px;
+  text-align: right;
+}
+
+.welcome-hint {
+  margin: 0;
+  font-size: 15px;
+  text-shadow: 1px 1px 1px rgb(0 0 0 / 0.3);
+}
+
+.welcome-greeting {
+  margin: 0;
+  font:
+    italic bold 52px 'Trebuchet MS',
+    Tahoma,
+    Verdana,
+    sans-serif;
+  text-shadow: 2px 2px 3px rgb(0 0 0 / 0.35);
+}
+
+.welcome-divider {
+  align-self: stretch;
+  width: 1px;
+  margin: 48px 0;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0), rgb(255 255 255 / 0.85) 50%, rgb(255 255 255 / 0));
+}
+
+.welcome-right {
+  flex: 1;
+  padding-left: 36px;
+}
+
+/* the tile lights up on hover: a dark blue band fading to the right and an
+   amber frame round the picture */
+.xp button.plano.user-tile {
+  gap: 14px;
+  width: 300px;
+  max-width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 18px;
+  text-shadow: 1px 1px 1px rgb(0 0 0 / 0.3);
+}
+
+.xp button.plano.user-tile:hover,
+.xp button.plano.user-tile:focus-visible {
+  background: linear-gradient(90deg, #00309c, rgb(0 48 156 / 0));
+  outline: none;
+}
+
+.user-tile-picture {
+  display: flex;
+  padding: 2px;
+  border: 2px solid rgb(255 255 255 / 0.85);
+  border-radius: 6px;
+}
+
+.user-tile:hover .user-tile-picture,
+.user-tile:focus-visible .user-tile-picture {
+  border-color: #fbbd4f;
+}
+
+/* Em espera: the screen goes dark until a click or a key */
+.standby-screen {
+  background: #000;
+}
+
+/* Desligando…: a box over the grey desktop, which takes no more clicks */
+.shutting-screen {
+  display: grid;
+  place-items: center;
+  cursor: wait;
+}
+
+.shutting-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 30px 16px 18px;
+  background: linear-gradient(180deg, #7a9ce6 0, #5a7edc 30%, #4a6fd6 100%);
+  border: 1px solid #00309c;
+  border-radius: 6px;
+  box-shadow: 0 3px 12px rgb(0 0 0 / 0.5);
+  color: #fff;
+  font-size: 16px;
+  text-shadow: 1px 1px 1px rgb(0 0 0 / 0.3);
+}
+
+.off-screen {
+  display: grid;
+  place-items: center;
+  background: #000;
+  color: #b8b8b8;
+  font-size: 14px;
+}
+
+.off-screen p {
+  margin: 0;
+}
+
+/* -------------------------------------------------------- shutdown dialog */
+
+/* XP's "Desligar o computador" box. A sibling of .desktop, so it keeps its
+   colour while the desktop greys behind it; the overlay is transparent and
+   only swallows clicks, as the other modals do. */
+.shutdown-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+}
+
+.shutdown-dialog {
+  width: 312px;
+  overflow: hidden;
+  border: 1px solid #001f5c;
+  border-radius: 3px;
+  background: #5a7edc;
+  box-shadow: 3px 3px 10px rgb(0 0 0 / 0.5);
+  user-select: none;
+}
+
+.shutdown-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+  padding: 0 10px 0 12px;
+  background: #00309c;
+  border-bottom: 2px solid #8fb2f0;
+  border-image: linear-gradient(90deg, #00309c, #8fb2f0 40%, #c6d8fa 60%, #00309c) 1;
+  color: #fff;
+  font-size: 16px;
+}
+
+.shutdown-choices {
+  display: flex;
+  justify-content: space-evenly;
+  padding: 22px 6px 18px;
+  background:
+    radial-gradient(ellipse 60% 80% at 0 0, rgb(160 190 245 / 0.7), rgb(160 190 245 / 0) 100%),
+    #5a7edc;
+}
+
+.xp button.plano.shutdown-choice {
+  flex-direction: column;
+  gap: 6px;
+  width: 86px;
+  color: #fff;
+  text-align: center;
+  text-shadow: 1px 1px 1px rgb(0 0 0 / 0.35);
+}
+
+.xp button.plano.shutdown-choice:hover {
+  filter: brightness(1.12);
+}
+
+/* one red power button, turned amber for Em espera and green for Reiniciar */
+.shutdown-choice > svg {
+  filter: drop-shadow(1px 1px 1px rgb(0 0 0 / 0.4));
+}
+
+.shutdown-standby > svg {
+  filter: hue-rotate(38deg) brightness(1.2) drop-shadow(1px 1px 1px rgb(0 0 0 / 0.4));
+}
+
+.shutdown-restart > svg {
+  filter: hue-rotate(105deg) drop-shadow(1px 1px 1px rgb(0 0 0 / 0.4));
+}
+
+.xp button.plano.shutdown-choice:focus-visible {
+  outline: none;
+}
+
+.shutdown-choice:focus-visible .shutdown-label {
+  outline: 1px dotted #fff;
+  outline-offset: 1px;
+}
+
+.shutdown-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px;
+  background: #00309c;
+}
+
+/* -------------------------------------------------- minimize ghost, tooltips */
+
+/* The rectangle that flies between a window and its taskbar button (spec,
+   "Animação de minimizar e restaurar"), in the active title bar's blue. On
+   <body>, outside any zoom; lib/ghost.ts animates its box and removes it. */
+.window-ghost {
+  position: fixed;
+  z-index: 2147483646;
+  box-sizing: border-box;
+  border: 1px solid #0831d9;
+  background: #0053ee;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* The yellow tip (spec, "Dicas amarelas"), in screen px: .xp has no zoom.
+   TooltipLayer measures it at 0,0 and then moves it next to the pointer;
+   max-content keeps its width the same wherever it lands. Above everything,
+   session screens included. */
+.xp-tooltip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 2147483647;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(400px, 100vw);
+  padding: 1px 4px 2px;
+  border: 1px solid #000;
+  background: #ffffe1;
+  box-shadow: 2px 2px 3px rgb(0 0 0 / 0.25);
+  color: #000;
+  font-family: Tahoma, Verdana, sans-serif;
+  font-size: 11px;
+  /* a title's line breaks, as the browser's tip shows them */
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  pointer-events: none;
 }

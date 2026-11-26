@@ -20,7 +20,7 @@ import {
   parentOf,
   validateName,
 } from '../../api'
-import type { LsData, LsEntry } from '../../api'
+import type { DiskInfo, LsData, LsEntry } from '../../api'
 import {
   keys,
   useCreateFile,
@@ -36,8 +36,10 @@ import {
 import { useHighlight } from '../../hooks/useHighlight'
 import type { Target } from '../../hooks/useHighlight'
 import { useNavigation } from '../../hooks/useNavigation'
+import { usePref } from '../../hooks/usePref'
 import { useSelection } from '../../hooks/useSelection'
 import { useWindowShortcuts } from '../../hooks/useWindowShortcuts'
+import { checkBalloon, formattedBalloon } from '../../lib/balloons'
 import { chainFromFat } from '../../lib/chain'
 import { clustersNeeded, formatCount } from '../../lib/content'
 import { planDelete } from '../../lib/deletePlan'
@@ -52,8 +54,10 @@ import {
 } from '../../lib/errors'
 import { describeMany, describeOne } from '../../lib/inspect'
 import { fitName, remapPath, uniqueName } from '../../lib/names'
+import { zoomPref } from '../../lib/prefs'
 import { nextSort, sortEntries } from '../../lib/sort'
 import type { SortState } from '../../lib/sort'
+import { formatZoom, stepZoom } from '../../lib/zoom'
 import { FileViewer } from '../content/FileViewer'
 import { ConfirmDelete } from '../dialogs/ConfirmDelete'
 import { DeleteProgress } from '../dialogs/DeleteProgress'
@@ -64,13 +68,14 @@ import { PropertiesDialog } from '../dialogs/PropertiesDialog'
 import { UploadDialog } from '../dialogs/UploadDialog'
 import { ChainStrip } from '../inspector/ChainStrip'
 import type { StripRow } from '../inspector/ChainStrip'
+import { useNotify, useWindow } from '../desktop/DeskContext'
 import { CheckReport } from '../inspector/CheckReport'
 import { ClusterMap } from '../inspector/ClusterMap'
 import type { MapLit } from '../inspector/ClusterMap'
 import { AddressBar } from '../shell/AddressBar'
+import { AppWindow } from '../shell/AppWindow'
 import { ContextMenu } from '../shell/ContextMenu'
 import type { Point } from '../shell/ContextMenu'
-import { ExplorerWindow } from '../shell/ExplorerWindow'
 import { MenuBar } from '../shell/MenuBar'
 import type { Menu, MenuItem } from '../shell/MenuBar'
 import { SplitPane } from '../shell/SplitPane'
@@ -131,11 +136,24 @@ const STRIP_ALL = 2
  */
 export function Explorer() {
   const [disk, setDisk] = useState(0)
-  return <ExplorerBody key={disk} onFormatted={() => setDisk((n) => n + 1)} />
+  const notify = useNotify()
+  return (
+    <ExplorerBody
+      key={disk}
+      onFormatted={(info) => {
+        setDisk((n) => n + 1)
+        notify(formattedBalloon(info))
+      }}
+    />
+  )
 }
 
-function ExplorerBody({ onFormatted }: { onFormatted: () => void }) {
+function ExplorerBody({ onFormatted }: { onFormatted: (info: DiskInfo) => void }) {
+  const win = useWindow()
+  const notify = useNotify()
   const queryClient = useQueryClient()
+  /** one level for every window; the keys and Ctrl+wheel live in AppWindow */
+  const [zoom, setZoom] = usePref(zoomPref)
   const nav = useNavigation('/')
   const { current } = nav
 
@@ -434,14 +452,17 @@ function ExplorerBody({ onFormatted }: { onFormatted: () => void }) {
     setRenaming({ dir: current, path, error: null, busy: false })
   }
 
-  /** POST /file/rename, then every place holding the old path follows it. Rejects as the API did. */
-  const renamePath = async (dir: string, path: string, name: string) => {
+  /**
+   * POST /file/rename, then every place holding the old path follows it. Rejects as the API did.
+   * `reselect` says, once the answer is in, whether the selection still is this item's.
+   */
+  const renamePath = async (dir: string, path: string, name: string, reselect = () => true) => {
     const { path_novo } = await rename.mutateAsync({ path, nome: name })
     await settle(dir)
     forget(path)
     nav.remap(path, path_novo)
     setClipboard((c) => c && { ...c, paths: c.paths.map((p) => remapPath(p, path, path_novo)) })
-    selection.select([path_novo], dir)
+    if (reselect()) selection.select([path_novo], dir)
   }
 
   const commitRename = async (name: string) => {
@@ -452,13 +473,20 @@ function ExplorerBody({ onFormatted }: { onFormatted: () => void }) {
     const invalid = validateName(name)
     if (invalid) return setRenaming({ ...r, error: invalid })
 
-    setRenaming({ ...r, error: null, busy: true })
+    const sent = { ...r, error: null, busy: true }
+    setRenaming(sent)
+    // A click on Nova pasta or Novo arquivo commits this rename on its way and
+    // opens the new item's rename before this request is back: the answer
+    // ends only this rename, never the one that replaced it, nor moves the
+    // selection off the new item.
+    const stillOurs = () => renamingRef.current === sent
     try {
-      await renamePath(r.dir, r.path, name)
-      setRenaming(null)
+      await renamePath(r.dir, r.path, name, stillOurs)
+      if (stillOurs()) setRenaming(null)
     } catch (e) {
       // 15b: the field stays open with the text, the backend message under it
-      setRenaming({ ...r, error: messageOf(e), busy: false })
+      if (stillOurs()) setRenaming({ ...r, error: messageOf(e), busy: false })
+      else fail(e)
     }
   }
 
@@ -657,7 +685,8 @@ function ExplorerBody({ onFormatted }: { onFormatted: () => void }) {
           paste: () => void paste(),
           properties: () => doProperties?.(),
         },
-    !modal,
+    // a minimized or inactive window must not delete what it has selected
+    !modal && win.takesKeys,
   )
 
   // --------------------------------------------------------- menus, toolbar
@@ -676,6 +705,12 @@ function ExplorerBody({ onFormatted }: { onFormatted: () => void }) {
   const doCheck = !locked && !busy ? () => setChecking(true) : undefined
   const doFormat =
     !readingFat && !busy ? () => setFormatting(noDisk ? 'required' : 'normal') : undefined
+  // off at 200% and 75%, where a step goes nowhere
+  const zoomIn = stepZoom(zoom, 1)
+  const zoomOut = stepZoom(zoom, -1)
+  const doZoomIn = zoomIn !== zoom ? () => setZoom(zoomIn) : undefined
+  const doZoomOut = zoomOut !== zoom ? () => setZoom(zoomOut) : undefined
+  const doZoomReset = zoom !== 1 ? () => setZoom(1) : undefined
 
   // items without onSelect render disabled until their phase lands
   const menus: Menu[] = [
@@ -714,6 +749,10 @@ function ExplorerBody({ onFormatted }: { onFormatted: () => void }) {
       items: [
         { label: 'Ícones', checked: false },
         { label: 'Detalhes', checked: true },
+        { separator: true },
+        { label: 'Ampliar', shortcut: 'Ctrl++', onSelect: doZoomIn },
+        { label: 'Reduzir', shortcut: 'Ctrl+−', onSelect: doZoomOut },
+        { label: 'Tamanho normal', shortcut: 'Ctrl+0', onSelect: doZoomReset },
         { separator: true },
         { label: 'Atualizar', shortcut: 'F5', onSelect: refresh },
       ],
@@ -871,6 +910,7 @@ function ExplorerBody({ onFormatted }: { onFormatted: () => void }) {
         dir={current}
         entries={notice ? [] : entries}
         sort={sort}
+        active={win.takesKeys}
         selected={selection.selected}
         focus={selection.focus}
         cut={clipboard?.from === current ? new Set(clipboard.paths) : undefined}
@@ -893,7 +933,10 @@ function ExplorerBody({ onFormatted }: { onFormatted: () => void }) {
   )
 
   return (
-    <ExplorerWindow title={noDisk ? 'Simulador FAT' : `${toDosPath(current)} (Simulador FAT)`}>
+    <AppWindow
+      title={noDisk ? 'Simulador FAT' : `${toDosPath(current)} (Simulador FAT)`}
+      icon="folderOpen"
+    >
       <MenuBar menus={menus} />
       {/* every button checks locked itself, so Formatar can stay on in tela 17 */}
       <Toolbar groups={toolbar} disabled={readingFat} />
@@ -914,7 +957,12 @@ function ExplorerBody({ onFormatted }: { onFormatted: () => void }) {
         }
         right={right}
       />
-      <StatusBar main={statusMain} space={statusSpace} disk={statusDisk} />
+      <StatusBar
+        main={statusMain}
+        space={statusSpace}
+        disk={statusDisk}
+        zoom={zoom !== 1 ? `Zoom: ${formatZoom(zoom)}` : undefined}
+      />
 
       {menu && contextItems.length > 0 && (
         <ContextMenu at={menu.at} items={contextItems} onClose={() => setMenu(null)} />
@@ -978,7 +1026,13 @@ function ExplorerBody({ onFormatted }: { onFormatted: () => void }) {
           onClose={() => setProperties(null)}
         />
       )}
-      {checking && <CheckReport fat={fat.data?.entradas} onClose={() => setChecking(false)} />}
+      {checking && (
+        <CheckReport
+          fat={fat.data?.entradas}
+          onClose={() => setChecking(false)}
+          onResult={(r) => notify(checkBalloon(r))}
+        />
+      )}
       {/* the computer's file picker; Arquivo > Enviar arquivo clicks it */}
       <input ref={fileInput} type="file" hidden onChange={onFilePicked} />
       {formatting && (
@@ -999,6 +1053,6 @@ function ExplorerBody({ onFormatted }: { onFormatted: () => void }) {
           onClose={() => setFailure(null)}
         />
       )}
-    </ExplorerWindow>
+    </AppWindow>
   )
 }
