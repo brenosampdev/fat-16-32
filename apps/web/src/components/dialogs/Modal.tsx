@@ -6,8 +6,8 @@ import { cls } from '../../lib/display'
 type Props = {
   title: string
   children: ReactNode
-  /** the row of buttons at the bottom */
-  buttons: ReactNode
+  /** the row of buttons at the bottom; the file viewer has none */
+  buttons?: ReactNode
   /** Esc and the title bar ×. Required: every dialog here has a way out. */
   onClose: () => void
   /** focused on open; defaults to the first button */
@@ -41,8 +41,11 @@ export function Modal({
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
+    // the box itself as a last resort, so Esc and Tab still reach onKeyDown
     const first =
-      initialFocus?.current ?? boxRef.current?.querySelector<HTMLElement>('.dialog-buttons button')
+      initialFocus?.current ??
+      boxRef.current?.querySelector<HTMLElement>('.dialog-buttons button') ??
+      boxRef.current
     first?.focus()
     return () => previous?.focus()
     // focus moves once, on open
@@ -78,6 +81,7 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={describedBy}
+        tabIndex={-1}
       >
         <div className="title-bar">
           <div className="title-bar-text" id={titleId}>
@@ -88,7 +92,7 @@ export function Modal({
           </div>
         </div>
         {children}
-        <div className="dialog-buttons">{buttons}</div>
+        {buttons && <div className="dialog-buttons">{buttons}</div>}
       </div>
     </div>
   )

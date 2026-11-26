@@ -1,16 +1,18 @@
 // The Explorer window wired to the API.
 // Phase 2: navigation. Phase 3: new folder / file, rename, move (dialog and
-// cut / paste) and delete, recursive for folders with content.
+// cut / paste) and delete, recursive for folders with content. Phase 4: open
+// a file (viewer and the three writes) and upload one from the computer.
 
 import { useQueryClient } from '@tanstack/react-query'
 import { useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { ChangeEvent, ReactNode } from 'react'
 
 import {
   api,
   basename,
   clusterState,
   ehSemDisco,
+  fileToBase64,
   isAncestor,
   joinPath,
   parentOf,
@@ -27,6 +29,7 @@ import {
   useMove,
   useRemove,
   useRename,
+  useWrite,
 } from '../../api/queries'
 import { useNavigation } from '../../hooks/useNavigation'
 import { useSelection } from '../../hooks/useSelection'
@@ -36,13 +39,15 @@ import { planDelete } from '../../lib/deletePlan'
 import type { DeletePlan } from '../../lib/deletePlan'
 import { DRIVE, formatBytes, parseTypedPath, toDosPath } from '../../lib/display'
 import { errorTitle, isNetworkError, messageOf } from '../../lib/errors'
-import { remapPath, uniqueName } from '../../lib/names'
+import { fitName, remapPath, uniqueName } from '../../lib/names'
 import { nextSort, sortEntries } from '../../lib/sort'
 import type { SortState } from '../../lib/sort'
+import { FileViewer } from '../content/FileViewer'
 import { ConfirmDelete } from '../dialogs/ConfirmDelete'
 import { DeleteProgress } from '../dialogs/DeleteProgress'
 import { ErrorDialog } from '../dialogs/ErrorDialog'
 import { MoveDialog } from '../dialogs/MoveDialog'
+import { UploadDialog } from '../dialogs/UploadDialog'
 import { ClusterMap } from '../inspector/ClusterMap'
 import { AddressBar } from '../shell/AddressBar'
 import { ContextMenu } from '../shell/ContextMenu'
@@ -70,6 +75,8 @@ type Progress = {
   freed: number
   cancelling: boolean
 }
+/** a local file waiting for a name the disk accepts */
+type Upload = { file: File; reason: string; suggestion: string; taken: Set<string> }
 
 /**
  * Pause before each deletion of a batch, so tela 10 can be read and Cancelar
@@ -115,6 +122,7 @@ export function Explorer() {
   const remove = useRemove()
   const rename = useRename()
   const move = useMove()
+  const write = useWrite()
 
   const [sort, setSort] = useState<SortState>({ column: 'name', asc: true })
   const [failure, setFailure] = useState<Failure | null>(null)
@@ -124,7 +132,11 @@ export function Explorer() {
   const [moving, setMoving] = useState<Item[] | null>(null)
   const [menu, setMenu] = useState<{ at: Point; onItem: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
+  /** the file open in the viewer (telas 11a and 11b) */
+  const [viewing, setViewing] = useState<string | null>(null)
+  const [uploading, setUploading] = useState<Upload | null>(null)
   const cancelDelete = useRef(false)
+  const fileInput = useRef<HTMLInputElement>(null)
 
   // Mirrored in a ref so the field's blur, which Chrome also fires while the
   // input is being removed, never acts on a rename that already ended.
@@ -144,7 +156,7 @@ export function Explorer() {
   // tela 04 locks the toolbar while the FAT is read; tela 17 leaves only
   // Formatar, which arrives in phase 6
   const locked = noDisk || readingFat
-  const modal = !!(failure || confirm || progress || moving)
+  const modal = !!(failure || confirm || progress || moving || viewing || uploading)
   /** writes are allowed: a disk, a listed folder, nothing else running */
   const canEdit = !locked && !busy && !!dir.data
 
@@ -159,7 +171,7 @@ export function Explorer() {
     [entries, paths, selection.selected],
   )
   const single = selectedItems.length === 1 ? selectedItems[0] : null
-  const canOpen = !locked && single?.entry.tipo === 'diretorio'
+  const canOpen = !locked && !!single
   const canPaste = canEdit && !!clipboard && clipboard.from !== current
   const disk = noDisk ? undefined : info.data
 
@@ -209,8 +221,9 @@ export function Explorer() {
   }
 
   const open = (entry: LsEntry, path: string) => {
+    if (locked) return
     if (entry.tipo === 'diretorio') nav.navigate(path)
-    // files open in the viewer, phase 4
+    else setViewing(path)
   }
 
   const openSelected = () => {
@@ -266,9 +279,72 @@ export function Explorer() {
     }
   }
 
+  // ------------------------------------------------------------- upload
+
+  /**
+   * There is no multipart: an upload is POST /file/create, then POST
+   * /file/write with the bytes in Base64 (build-frontend.md, "Upload").
+   */
+  const upload = async (file: File, name: string) => {
+    const where = current
+    const path = joinPath(where, name)
+    // read before touching the disk: a local read error leaves nothing behind
+    const base64 = await fileToBase64(file)
+    await createFile.mutateAsync(path)
+    if (file.size > 0) {
+      try {
+        await write.mutateAsync({ path, base64 })
+      } catch (e) {
+        // create passed and write did not (a full disk, typically): without
+        // this the folder keeps an empty orphan
+        await remove.mutateAsync(path).catch(() => {})
+        throw e
+      }
+    }
+    refreshDisk()
+    await settle(where)
+    selection.select([path], where)
+  }
+
+  const uploadNow = async (file: File) => {
+    setBusy(true)
+    try {
+      await upload(file, file.name)
+    } catch (e) {
+      fail(e, () => void uploadNow(file))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** A name the disk refuses stops in UploadDialog; any other goes straight out. */
+  const onFilePicked = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    // cleared so picking the same file again still fires onChange
+    e.target.value = ''
+    if (!file || !canEdit) return
+    const taken = new Set(entries.map((x) => x.nome))
+    const reason =
+      validateName(file.name) ?? (taken.has(file.name) ? `Já existe "${file.name}" nesta pasta.` : null)
+    if (reason) setUploading({ file, reason, suggestion: fitName(file.name, taken), taken })
+    else void uploadNow(file)
+  }
+
+  const uploadRenamed = async (name: string) => {
+    if (!uploading) return
+    setBusy(true)
+    try {
+      // a rejection stays in the dialog, which shows the backend detail
+      await upload(uploading.file, name)
+      setUploading(null)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   // ------------------------------------------------------------- rename
 
-  const startRename = (path = single?.path) => {
+  const startRename =(path = single?.path) => {
     if (!path || !canEdit) return
     selection.select([path])
     setRenaming({ dir: current, path, error: null, busy: false })
@@ -462,6 +538,7 @@ export function Explorer() {
   const canRename = canEdit && !!single
   const newFolder = canEdit ? () => void createItem('pasta') : undefined
   const newFile = canEdit ? () => void createItem('arquivo') : undefined
+  const doUpload = canEdit ? () => fileInput.current?.click() : undefined
   const doDelete = hasSelection ? () => void requestDelete() : undefined
   const doMove = hasSelection ? () => setMoving(selectedItems) : undefined
   const doCut = hasSelection ? cutSelection : undefined
@@ -477,6 +554,7 @@ export function Explorer() {
         { separator: true },
         { label: 'Nova pasta', onSelect: newFolder },
         { label: 'Novo arquivo', onSelect: newFile },
+        { label: 'Enviar arquivo…', onSelect: doUpload },
         { separator: true },
         { label: 'Renomear', shortcut: 'F2', onSelect: doRename },
         { label: 'Mover…', onSelect: doMove },
@@ -552,6 +630,7 @@ export function Explorer() {
     contextItems = [
       { label: 'Nova pasta', onSelect: newFolder },
       { label: 'Novo arquivo', onSelect: newFile },
+      { label: 'Enviar arquivo…', onSelect: doUpload },
       { separator: true },
       { label: 'Colar', onSelect: doPaste },
       { separator: true },
@@ -716,6 +795,27 @@ export function Explorer() {
           onClose={() => setMoving(null)}
         />
       )}
+      {viewing && (
+        <FileViewer
+          path={viewing}
+          disk={disk}
+          fat={fat.data?.entradas}
+          onClose={() => setViewing(null)}
+        />
+      )}
+      {uploading && (
+        <UploadDialog
+          file={uploading.file}
+          reason={uploading.reason}
+          suggestion={uploading.suggestion}
+          taken={uploading.taken}
+          clusterSize={disk?.clusterSize}
+          onUpload={uploadRenamed}
+          onClose={() => setUploading(null)}
+        />
+      )}
+      {/* the computer's file picker; Arquivo > Enviar arquivo clicks it */}
+      <input ref={fileInput} type="file" hidden onChange={onFilePicked} />
       {failure && (
         <ErrorDialog
           title={failure.title}
