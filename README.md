@@ -15,7 +15,7 @@ Git, Node.js e Python 3 (testado com Node 24 e Python 3.12).
 ## Instalar
 
 ```bash
-git clone <url-do-repo> fat-xp
+git clone https://github.com/brenosampdev/fat-16-32.git
 cd fat-xp
 npm install
 ```
