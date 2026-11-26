@@ -33,6 +33,7 @@ import {
   useRename,
   useWrite,
 } from '../../api/queries'
+import { useDragMove } from '../../hooks/useDragMove'
 import { useHighlight } from '../../hooks/useHighlight'
 import type { Target } from '../../hooks/useHighlight'
 import { useNavigation } from '../../hooks/useNavigation'
@@ -198,8 +199,16 @@ function ExplorerBody({ onFormatted }: { onFormatted: (info: DiskInfo) => void }
     renamingRef.current = r
     setRenamingState(r)
   }
-  // leaving the folder cancels a rename in progress
-  if (renaming && renaming.dir !== current && !renaming.busy) setRenaming(null)
+  // an async answer cannot trust the `current` it closed over
+  const currentRef = useRef(current)
+  currentRef.current = current
+  // Leaving the folder cancels a rename in progress. One that ends on an error
+  // is not dropped in silence: the error opens as a dialog, as it was.
+  useEffect(() => {
+    if (!renaming || renaming.dir === current || renaming.busy) return
+    if (renaming.error) setFailure({ title: 'Erro', message: renaming.error })
+    setRenaming(null)
+  }, [renaming, current])
 
   // every endpoint answers 400 "Nenhum disco aberto" when there is no disk
   const noDisk = ehSemDisco(info.error) || ehSemDisco(fat.error) || ehSemDisco(dir.error)
@@ -485,8 +494,12 @@ function ExplorerBody({ onFormatted }: { onFormatted: (info: DiskInfo) => void }
       if (stillOurs()) setRenaming(null)
     } catch (e) {
       // 15b: the field stays open with the text, the backend message under it
-      if (stillOurs()) setRenaming({ ...r, error: messageOf(e), busy: false })
-      else fail(e)
+      if (!stillOurs()) fail(e)
+      else if (r.dir !== currentRef.current) {
+        // the folder changed meanwhile: no field to show it in, so the dialog does
+        fail(e)
+        setRenaming(null)
+      } else setRenaming({ ...r, error: messageOf(e), busy: false })
     }
   }
 
@@ -581,11 +594,21 @@ function ExplorerBody({ onFormatted }: { onFormatted: (info: DiskInfo) => void }
 
   /** POST /file/move per item. Not atomic: what moved before an error stays moved. */
   const moveAll = async (from: string[], target: string, onMoved?: (path: string) => void) => {
-    for (const path of from) {
-      const { path_novo } = await move.mutateAsync({ origem: path, destino: target })
-      forget(path)
-      nav.remap(path, path_novo)
-      onMoved?.(path)
+    let moved = false
+    try {
+      for (const path of from) {
+        const { path_novo } = await move.mutateAsync({ origem: path, destino: target })
+        moved = true
+        forget(path)
+        nav.remap(path, path_novo)
+        onMoved?.(path)
+      }
+    } finally {
+      // A collapsed tree node's query is disabled, so the invalidation alone
+      // leaves its cached listing (and its missing "+") as it was. The default
+      // staleTime is 0, so this really fetches. A failed refresh is not a
+      // failed move: nothing waits for it and nothing is shown.
+      if (moved) void listFolder(target).catch(() => {})
     }
   }
 
@@ -625,6 +648,33 @@ function ExplorerBody({ onFormatted }: { onFormatted: (info: DiskInfo) => void }
       setBusy(false)
     }
   }
+
+  /** Rows dropped on a folder of the list or the tree: the moves Colar makes. */
+  const drop = async (paths: string[], target: string) => {
+    const pending = new Set(paths)
+    setBusy(true)
+    try {
+      await moveAll(paths, target, (p) => pending.delete(p))
+      // the items left the folder being shown
+      selection.clear()
+    } catch (e) {
+      fail(e, () => void drop([...pending], target))
+    } finally {
+      // what moved is no longer waiting for a paste
+      const moved = new Set(paths.filter((p) => !pending.has(p)))
+      setClipboard((c) => {
+        const left = c?.paths.filter((p) => !moved.has(p)) ?? []
+        return c && left.length > 0 ? { ...c, paths: left } : null
+      })
+      setBusy(false)
+    }
+  }
+
+  const drag = useDragMove({
+    enabled: canEdit && !renaming && !modal,
+    current,
+    onDrop: (paths, target) => void drop(paths, target),
+  })
 
   // ------------------------------------------------------------- map
 
@@ -922,6 +972,7 @@ function ExplorerBody({ onFormatted }: { onFormatted: (info: DiskInfo) => void }
         onOpen={open}
         onSlowClick={(path) => startRename(path)}
         onContextMenu={(path, at) => !locked && setMenu({ at, onItem: path !== null })}
+        onDragBegin={drag.begin}
       />
       <ClusterMap
         entries={noDisk ? undefined : fat.data?.entradas}
@@ -964,6 +1015,7 @@ function ExplorerBody({ onFormatted }: { onFormatted: (info: DiskInfo) => void }
         zoom={zoom !== 1 ? `Zoom: ${formatZoom(zoom)}` : undefined}
       />
 
+      {drag.ghost}
       {menu && contextItems.length > 0 && (
         <ContextMenu at={menu.at} items={contextItems} onClose={() => setMenu(null)} />
       )}

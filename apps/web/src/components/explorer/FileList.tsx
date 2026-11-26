@@ -3,6 +3,7 @@ import type { KeyboardEvent, MouseEvent, ReactNode } from 'react'
 
 import { joinPath, tipoLegivel } from '../../api'
 import type { LsEntry } from '../../api'
+import type { DragItem } from '../../hooks/useDragMove'
 import type { PickMods } from '../../hooks/useSelection'
 import { cls, formatBytes, formatDateTime } from '../../lib/display'
 import { revealIn } from '../../lib/dom'
@@ -45,6 +46,8 @@ type Props = {
   onSlowClick?: (path: string) => void
   /** path is null on the blank area */
   onContextMenu?: (path: string | null, at: Point) => void
+  /** a plain left press on a row: what a drag from there would carry */
+  onDragBegin?: (e: MouseEvent, items: DragItem[]) => void
 }
 
 /** Details view. Only what /ls returns: no fragment column (telas.md, tela 01). */
@@ -64,11 +67,14 @@ export function FileList({
   onOpen,
   onSlowClick,
   onContextMenu,
+  onDragBegin,
 }: Props) {
   const boxRef = useRef<HTMLDivElement>(null)
   const headRef = useRef<HTMLTableSectionElement>(null)
   /** set on mousedown: the row was already the only selection */
   const wasAlone = useRef<string | null>(null)
+  /** set on mousedown: a plain press inside a multi-selection picks the row on its click */
+  const pickOnClick = useRef<string | null>(null)
   const slowTimer = useRef<number | undefined>(undefined)
 
   // keyboard moves and returning from a subfolder must keep the row in view
@@ -134,6 +140,7 @@ export function FileList({
 
   const onRowDown = (e: MouseEvent, path: string) => {
     window.clearTimeout(slowTimer.current)
+    pickOnClick.current = null
     if (e.button === 2) {
       // right-click on an unselected item selects it alone; on a selected one keeps the group
       if (!selected.has(path)) onPick?.(path)
@@ -142,7 +149,18 @@ export function FileList({
     if (e.button !== 0) return
     const plain = !e.ctrlKey && !e.metaKey && !e.shiftKey
     wasAlone.current = plain && selected.size === 1 && selected.has(path) ? path : null
-    onPick?.(path, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey })
+    if (plain && renaming?.path !== path) {
+      // a selected row carries the whole selection, in list order
+      const carried = selected.has(path) ? selected : new Set([path])
+      const items: DragItem[] = entries.flatMap((x, i) =>
+        carried.has(paths[i]) ? [{ path: paths[i], name: x.nome, isDir: x.tipo === 'diretorio' }] : [],
+      )
+      onDragBegin?.(e, items)
+    }
+    // XP narrows a multi-selection only on a release without dragging: the
+    // drag, if it comes, swallows the click
+    if (plain && selected.size > 1 && selected.has(path)) pickOnClick.current = path
+    else onPick?.(path, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey })
   }
 
   const onNameClick = (e: MouseEvent, path: string) => {
@@ -223,7 +241,13 @@ export function FileList({
                     cut?.has(path) && 'cut',
                     field !== null && 'renaming',
                   )}
+                  data-drop-path={isDir ? path : undefined}
                   onMouseDown={(ev) => onRowDown(ev, path)}
+                  onClick={() => {
+                    if (pickOnClick.current !== path) return
+                    pickOnClick.current = null
+                    onPick?.(path)
+                  }}
                   onDoubleClick={() => {
                     window.clearTimeout(slowTimer.current)
                     onOpen?.(e, path)

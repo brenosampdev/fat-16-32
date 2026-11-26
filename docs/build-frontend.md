@@ -883,7 +883,7 @@ Shift+clique precisa do índice do último item clicado **na ordenação vigente
 
 **Recortar/colar mapeia em `POST /file/move`.** Copiar/colar exigiria duplicar conteúdo: leia com `/file/read`, crie com `/file/create` e grave com `/file/write`. Se o prazo apertar, implemente só recortar — é uma chamada.
 
-Drag-and-drop entre pastas entrega a mesma funcionalidade de recortar/colar por várias vezes o custo. Deixe como etapa opcional, no fim.
+Arrastar para mover está feito (`docs/superpowers/specs/2026-11-26-arrastar-mover-design.md`): arquivos e pastas da lista vão para uma pasta da lista ou da árvore, pelo mesmo `POST /file/move` do Colar.
 
 ### Renomear inline
 

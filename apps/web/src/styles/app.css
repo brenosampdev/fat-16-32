@@ -2818,3 +2818,50 @@ body {
   overflow-wrap: anywhere;
   pointer-events: none;
 }
+
+/* ---------------------------------------------------------- drag to move */
+
+/* the folder under the pointer that takes the dragged items, in the list's
+   focused selection blue; only the name, as a selection is drawn */
+.filelist tr.drop-target .name-text,
+.tree-row.drop-target .tree-text {
+  background: #316ac5;
+  color: #fff;
+}
+
+/* What follows the pointer (useDragMove): on <body>, outside any zoom, at the
+   pointer's screen px plus 8; never hit by elementFromPoint, so the target
+   found is the element under it. As high as the minimize ghost. */
+.drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 2147483646;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+  color: #000;
+  font-family: Tahoma, Verdana, sans-serif;
+  font-size: 11px;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.drag-ghost > svg {
+  flex: none;
+}
+
+/* while a drag runs: no hand or text cursor anywhere, no text selected... */
+body.drag-moving,
+body.drag-moving * {
+  cursor: default !important;
+  user-select: none;
+}
+
+/* ...and the forbidden sign where nothing takes the items (after the rule
+   above: same specificity) */
+body.drag-no-drop,
+body.drag-no-drop * {
+  cursor: no-drop !important;
+}

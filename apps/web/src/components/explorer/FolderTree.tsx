@@ -137,6 +137,7 @@ function FolderNode({ path, label, ctx }: { path: string; label: string; ctx: Ct
       note={ctx.note?.(path)}
       onToggle={isRoot ? undefined : () => ctx.toggle(path)}
       onSelect={() => ctx.onNavigate(path)}
+      dropPath={path}
     >
       {open && subfolders && subfolders.length > 0
         ? subfolders.map((name) => (

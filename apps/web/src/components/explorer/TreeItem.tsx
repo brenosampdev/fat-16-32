@@ -22,6 +22,8 @@ type Props = {
   /** without a handler the box is only an indicator (the root never collapses) */
   onToggle?: () => void
   onSelect?: () => void
+  /** the folder this node stands for, as a drag-to-move target */
+  dropPath?: string
   children?: ReactNode
 }
 
@@ -34,6 +36,7 @@ export function TreeItem({
   note,
   onToggle,
   onSelect,
+  dropPath,
   children,
 }: Props) {
   const rowRef = useRef<HTMLDivElement>(null)
@@ -49,7 +52,7 @@ export function TreeItem({
       aria-selected={selected}
       aria-expanded={toggle === 'leaf' ? undefined : toggle === 'expanded'}
     >
-      <div className="tree-row" ref={rowRef}>
+      <div className="tree-row" ref={rowRef} data-drop-path={dropPath}>
         {toggle !== 'leaf' && (
           <button
             type="button"

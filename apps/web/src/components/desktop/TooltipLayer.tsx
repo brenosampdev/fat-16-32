@@ -93,6 +93,8 @@ export function TooltipLayer() {
     const show = () => {
       timer = undefined
       const t = text()
+      // rows dragged to a folder (useDragMove): no tip over what they pass
+      if (document.body.classList.contains('drag-moving')) return
       if (!owner?.isConnected || !t.trim()) return
       setTip({ text: t, x: pointer.x, y: pointer.y })
     }

@@ -31,8 +31,9 @@ ensaiado contra o backend real. Não há fase pendente: daqui em diante é corre
 - Área de trabalho do XP: `src/lib/windows.ts` (regras das janelas, sem React),
   `components/desktop/` (ícones, barra de tarefas, Iniciar, balões), `components/session/`
   (boot, Bem-vindo, desligar)
+- Arrastar para mover: regra do destino em `src/lib/dragMove.ts`, ponteiro e fantasma em `src/hooks/useDragMove.ts`
 - `src/lib/` — lógica sem React: cadeias, formatação, previsão do efeito de uma escrita
-- `smoke.ts` — uma seção por fase (1–22) e por parte da área de trabalho (23–25); a seção 22
+- `smoke.ts` — uma seção por fase (1–22) e por parte da área de trabalho e do arrastar (23–26); a seção 22
   repete o roteiro de demonstração no mock
 
 ## Fatos da API que quebram código se esquecidos

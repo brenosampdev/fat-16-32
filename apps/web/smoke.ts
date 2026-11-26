@@ -24,6 +24,7 @@ import {
 } from './src/lib/inspect'
 
 import { checkBalloon, formattedBalloon } from './src/lib/balloons'
+import { canDrop, dragLabel } from './src/lib/dragMove'
 import { clampMenu, formatZoom, parseZoom, stepZoom } from './src/lib/zoom'
 import { mutePref, zoomPref } from './src/lib/prefs'
 import { startPhase } from './src/lib/session'
@@ -189,6 +190,23 @@ async function main() {
   await esperaErro(400, () => mockApi.createFile('/f64.txt'), 'root cheio aos 64')
   const raiz64 = await mockApi.diskInfo()
   ok(raiz64.clustersUsados === 8, `raiz cresceu ate 8 clusters de 8 slots (veio ${raiz64.clustersUsados})`)
+
+  // a move into the full root: the same refusal as the backend
+  await mockApi.formatDisk({ variante: 'fat16' })
+  await mockApi.mkdir('/d')
+  await mockApi.createFile('/d/x.txt')
+  for (let i = 0; i < 63; i++) await mockApi.createFile(`/f${i}.txt`)
+  await esperaErro(400, () => mockApi.move('/d/x.txt', '/'), 'mover para a raiz cheia (64 com /d)')
+  const msgCheio = await mockApi.move('/d/x.txt', '/').then(
+    () => '',
+    (e: unknown) => (e instanceof ApiError ? e.message : String(e)),
+  )
+  ok(msgCheio === 'Destino cheio (limite FAT16).', `detail da raiz cheia: "${msgCheio}"`)
+  const dAposRecusa = await mockApi.ls('/d')
+  ok(
+    dAposRecusa.entradas.length === 1 && dAposRecusa.entradas[0].nome === 'x.txt',
+    'x.txt continua em /d depois da recusa',
+  )
 
   console.log('\n15. diskFat e diskCheck')
   await mockApi.formatDisk({ variante: 'fat16', cluster_size: 512, num_clusters: 16 })
@@ -521,6 +539,18 @@ async function main() {
   ok(checkBalloon({ consistente: false, erros: ['a'] }).text === '1 problema encontrado.' &&
      checkBalloon({ consistente: false, erros: ['a', 'b'] }).text === '2 problemas encontrados.', 'singular e plural')
   ok(checkBalloon({ consistente: false, erros: ['a'] }).icon === 'warning', 'problema usa icone de aviso')
+
+  console.log('\n26. Arrastar para mover')
+  ok(canDrop(['/a.txt'], '/docs', '/'), 'arquivo vai para uma pasta')
+  ok(!canDrop(['/a.txt'], '/', '/'), 'a pasta mostrada nao recebe')
+  ok(!canDrop(['/docs'], '/docs', '/'), 'pasta nao vai para si mesma')
+  ok(!canDrop(['/docs'], '/docs/sub', '/'), 'pasta nao vai para dentro de si')
+  ok(canDrop(['/docs2'], '/docs', '/') && canDrop(['/docs'], '/docs2', '/'), 'prefixo de nome nao e ancestral')
+  ok(canDrop(['/Docs'], '/docs', '/'), 'nomes diferem por maiuscula')
+  ok(canDrop(['/docs/a.txt', '/docs/b.txt'], '/', '/docs'), 'varios vao para a raiz pela arvore')
+  ok(!canDrop(['/docs/a.txt', '/docs/sub'], '/docs/sub/x', '/docs'), 'um item invalido barra o grupo')
+  ok(!canDrop([], '/docs', '/'), 'nada arrastado, nada aceito')
+  ok(dragLabel(['a.txt']) === 'a.txt' && dragLabel(['a.txt', 'b']) === '2 itens', 'rotulo do fantasma')
 
   console.log(falhas === 0 ? '\nTUDO OK\n' : `\n${falhas} FALHA(S)\n`)
   process.exit(falhas === 0 ? 0 : 1)
