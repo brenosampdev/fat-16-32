@@ -8,5 +8,3 @@ __pycache__/
 .env.local
 .DS_Store
 
-# backend is versioned separately by its owner
-apps/api/
