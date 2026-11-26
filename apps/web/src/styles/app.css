@@ -730,7 +730,7 @@ body {
   background: transparent;
 }
 
-/* five states from build-frontend.md; "aceso" (selected) arrives in phase 5 */
+/* five states from build-frontend.md: four from the FAT, then the selection */
 .cell.livre {
   background: #fff;
 }
@@ -747,13 +747,85 @@ body {
   background: #c0392b;
 }
 
+/* "aceso": the selection over any state, yellow #FFD700 (build-frontend.md),
+   darker on the last cluster. The second item of a pair gets a green, as far
+   from the FAT's blues and red as the yellow is (tela 02). */
+.cell.sel-a {
+  background: #ffd700;
+}
+
+.cell.sel-a-fim {
+  background: #b8860b;
+}
+
+.cell.sel-b {
+  background: #7cdb5a;
+}
+
+.cell.sel-b-fim {
+  background: #2f7d1e;
+}
+
+.legend-count {
+  color: #777;
+  font-variant-numeric: tabular-nums;
+}
+
+.clustermap-legend li .cell + .cell {
+  margin-left: -2px;
+}
+
 .clustermap-foot {
   flex: none;
-  height: 14px;
+  min-height: 14px;
   color: #444;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* the selection's chains (telas 01-03): one row per item, two at most */
+.chain-strip {
+  display: grid;
+  gap: 2px;
+}
+
+.strip-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 14px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.strip-name {
+  flex: none;
+  max-width: 160px;
+  margin-right: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: bold;
+}
+
+.strip-row .chain-chip {
+  padding: 0 4px;
+  line-height: 13px;
+}
+
+.strip-row.tone-a .chain-chip:not(.eof) {
+  background: #ffd700;
+  color: #222;
+}
+
+.strip-row.tone-b .chain-chip:not(.eof) {
+  background: #7cdb5a;
+  color: #10380a;
+}
+
+.strip-jump {
+  color: #4a5565;
 }
 
 /* ------------------------------------------------------------- status bar */
@@ -1529,5 +1601,165 @@ body {
 }
 
 .xp .dialog-body .dialog-text p.upload-local {
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------ properties (06, 07) */
+
+.xp .dialog.properties-dialog {
+  width: 390px;
+  max-width: 390px;
+}
+
+.xp .props-body {
+  margin: 0;
+  padding: 8px 8px 0;
+}
+
+.xp .props-panel {
+  min-height: 300px;
+  margin-bottom: 0;
+  padding: 12px;
+}
+
+.props-name {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.xp .props-name input[type='text'] {
+  flex: 1;
+  min-width: 0;
+}
+
+.xp .props-name input[type='text'].invalid {
+  border-color: #c0200f;
+}
+
+.props-error {
+  margin: 4px 0 0 44px;
+  color: #c0200f;
+  overflow-wrap: anywhere;
+}
+
+.props-panel hr {
+  margin: 9px 0;
+  border: none;
+  border-top: 1px solid #d0d0bf;
+}
+
+.props-facts {
+  grid-template-columns: 76px 1fr;
+}
+
+.props-wide {
+  grid-column: 1 / -1;
+}
+
+.props-fragmented {
+  color: #c0200f;
+  font-weight: bold;
+}
+
+.props-fat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fat-table-box.props-table {
+  max-height: 150px;
+}
+
+.props-table .fat-table th:last-child,
+.props-table .fat-table td:last-child {
+  text-align: left;
+}
+
+.props-table .fat-table th:first-child {
+  width: 22px;
+}
+
+/* FAT[n] points away from the next cluster: the chain jumps (tela 07) */
+.props-table .fat-table tr.jump td {
+  background: #fdecea;
+  color: #c0200f;
+}
+
+/* a new fragment starts: a divider line, as tela 07 */
+.props-table .fat-table tr.break td {
+  border-top: 1px solid #7f9db9;
+}
+
+.xp .props-slack {
+  margin: 0;
+  padding: 4px 10px 8px;
+}
+
+.slack-bar {
+  height: 12px;
+  margin: 4px 0 6px;
+  border: 1px solid #7f9db9;
+  /* wasted bytes: hatched, the used ones in the map's "em uso" blue */
+  background: repeating-linear-gradient(45deg, #fff 0 3px, #f3d6d2 3px 6px);
+}
+
+.slack-used {
+  display: block;
+  height: 100%;
+  background: #3a6ea5;
+}
+
+.props-note {
+  margin: 4px 0 0;
+}
+
+/* ------------------------------------------------------ check report (18) */
+
+.xp .dialog.check-report {
+  width: 470px;
+  max-width: 470px;
+}
+
+.xp .dialog-body .check-text {
+  flex: 1;
+}
+
+.xp .check-text fieldset {
+  margin: 0;
+  padding: 4px 10px 8px;
+}
+
+.check-lead {
+  font-weight: bold;
+}
+
+.check-tests {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.check-mark {
+  margin-right: 6px;
+  color: #1d8a1a;
+  font-weight: bold;
+}
+
+.check-problems {
+  display: grid;
+  gap: 5px;
+  max-height: 200px;
+  margin: 0;
+  padding: 6px 8px 6px 28px;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #7f9db9;
+}
+
+.check-problems li {
   overflow-wrap: anywhere;
 }

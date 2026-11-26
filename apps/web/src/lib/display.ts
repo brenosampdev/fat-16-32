@@ -29,6 +29,19 @@ export const formatBytes = (n: number): string => `${n.toLocaleString('pt-BR')} 
 export const formatDateTime = (unixSeconds: number): string =>
   formatDate(unixSeconds).replace(',', '')
 
+/** '12/11/2026 16:40:12', with seconds, for the Properties dialog (tela 06). */
+export const formatDateTimeFull = (unixSeconds: number): string =>
+  new Date(unixSeconds * 1000)
+    .toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+    .replace(',', '')
+
 /** Tiny classnames helper. */
 export const cls = (...parts: Array<string | false | null | undefined>): string =>
   parts.filter(Boolean).join(' ')

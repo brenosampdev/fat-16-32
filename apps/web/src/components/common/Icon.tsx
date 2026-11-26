@@ -14,11 +14,12 @@ export type IconName =
   | 'go'
   | 'error'
   | 'warning'
+  | 'ok'
 
 type Props = { name: IconName; size?: number; className?: string }
 
 export function Icon({ name, size = 16, className }: Props) {
-  const box = name === 'error' || name === 'warning' ? 32 : name === 'back' || name === 'forward' || name === 'up' ? 20 : 16
+  const box = name === 'error' || name === 'warning' || name === 'ok' ? 32 : name === 'back' || name === 'forward' || name === 'up' ? 20 : 16
   return (
     <svg
       className={className}
@@ -100,6 +101,12 @@ const SHAPES: Record<IconName, ReactElement> = {
       <path d="M16 2.5 30 28.5H2z" fill="#f6c736" stroke="#9a7208" strokeLinejoin="round" />
       <path d="M16 10.5v10" stroke="#222" strokeWidth="3.4" strokeLinecap="round" />
       <circle cx="16" cy="24.6" r="1.9" fill="#222" />
+    </>
+  ),
+  ok: (
+    <>
+      <circle cx="16" cy="16" r="13.5" fill="#3fa53a" stroke="#1d6b19" />
+      <path d="M9.5 16.5l4.5 4.5 8.5-9" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
     </>
   ),
 }

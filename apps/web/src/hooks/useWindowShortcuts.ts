@@ -10,6 +10,7 @@ type Handlers = {
   selectAll?: () => void
   cut?: () => void
   paste?: () => void
+  properties?: () => void
 }
 
 const isTyping = (t: EventTarget | null): boolean =>
@@ -45,7 +46,9 @@ export function useWindowShortcuts(handlers: Handlers, enabled: boolean) {
       if (key === 'F5') run(h.refresh)
       else if (e.altKey && key === 'ArrowLeft') run(h.back)
       else if (e.altKey && key === 'ArrowRight') run(h.forward)
-      else if (isTyping(e.target) || e.altKey) return
+      else if (isTyping(e.target)) return
+      else if (e.altKey && key === 'Enter') run(h.properties)
+      else if (e.altKey) return
       else if (key === 'Backspace' && !ctrl) run(h.up)
       else if (key === 'Delete' && !ctrl) run(h.remove)
       else if (key === 'F2') run(h.rename)

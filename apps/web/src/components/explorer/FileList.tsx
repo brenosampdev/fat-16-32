@@ -88,6 +88,8 @@ export function FileList({
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     // keys typed in the rename field belong to it
     if (notice || entries.length === 0 || e.target !== e.currentTarget) return
+    // Alt combinations belong to the window: Alt+Enter is Propriedades, not Abrir
+    if (e.altKey) return
     const i = focus ? paths.indexOf(focus) : -1
     const last = entries.length - 1
     let next: number

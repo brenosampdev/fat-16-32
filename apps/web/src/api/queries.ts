@@ -4,7 +4,7 @@
 // StatusBar e ClusterMap. Sem cache compartilhado, apagar um arquivo na lista
 // deixa a arvore e o mapa desatualizados. Toda escrita passa por useInvalidar().
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './index'
 import { parentOf } from './paths'
 
@@ -15,6 +15,8 @@ export const keys = {
   dir: (path: string) => ['dir', path] as const,
   chain: (path: string) => ['chain', path] as const,
   file: (path: string) => ['file', path] as const,
+  /** who occupies each cluster, from a walk of every folder (tela 07) */
+  owners: ['owners'] as const,
 }
 
 // ---------------------------------------------------------------------------
@@ -44,6 +46,16 @@ export const useFile = (path: string | null) =>
     enabled: !!path,
   })
 
+/** Uma /file/chain por caminho, na ordem pedida. A raiz nao e aceita pela rota. */
+export const useChains = (paths: string[]) =>
+  useQueries({
+    queries: paths.map((p) => ({
+      queryKey: keys.chain(p),
+      queryFn: () => api.chain(p),
+      enabled: p !== '/',
+    })),
+  })
+
 /** Caro e sob demanda: so roda quando o usuario pede. */
 export const useDiskCheck = () =>
   useQuery({
@@ -66,7 +78,13 @@ export function useInvalidar() {
       qc.invalidateQueries({ queryKey: keys.dir(d) })
     }
     if (escopos.includes('espaco')) qc.invalidateQueries({ queryKey: keys.info })
-    if (escopos.includes('fat')) qc.invalidateQueries({ queryKey: keys.fat })
+    if (escopos.includes('fat')) {
+      qc.invalidateQueries({ queryKey: keys.fat })
+      // a cadeia de qualquer arquivo ou pasta pode ter mudado junto com a FAT
+      // (a pasta pai cresce um cluster ao criar, por exemplo)
+      qc.invalidateQueries({ queryKey: ['chain'] })
+      qc.invalidateQueries({ queryKey: keys.owners })
+    }
   }
 }
 

@@ -2,6 +2,7 @@
 // Phase 2: navigation. Phase 3: new folder / file, rename, move (dialog and
 // cut / paste) and delete, recursive for folders with content. Phase 4: open
 // a file (viewer and the three writes) and upload one from the computer.
+// Phase 5: the selection lit on the map, Propriedades and Verificar disco.
 
 import { useQueryClient } from '@tanstack/react-query'
 import { useMemo, useRef, useState } from 'react'
@@ -10,7 +11,6 @@ import type { ChangeEvent, ReactNode } from 'react'
 import {
   api,
   basename,
-  clusterState,
   ehSemDisco,
   fileToBase64,
   isAncestor,
@@ -18,7 +18,7 @@ import {
   parentOf,
   validateName,
 } from '../../api'
-import type { FatEntry, LsEntry } from '../../api'
+import type { LsData, LsEntry } from '../../api'
 import {
   keys,
   useCreateFile,
@@ -31,6 +31,8 @@ import {
   useRename,
   useWrite,
 } from '../../api/queries'
+import { useHighlight } from '../../hooks/useHighlight'
+import type { Target } from '../../hooks/useHighlight'
 import { useNavigation } from '../../hooks/useNavigation'
 import { useSelection } from '../../hooks/useSelection'
 import { useWindowShortcuts } from '../../hooks/useWindowShortcuts'
@@ -39,6 +41,7 @@ import { planDelete } from '../../lib/deletePlan'
 import type { DeletePlan } from '../../lib/deletePlan'
 import { DRIVE, formatBytes, parseTypedPath, toDosPath } from '../../lib/display'
 import { errorTitle, isNetworkError, messageOf } from '../../lib/errors'
+import { describeMany, describeOne } from '../../lib/inspect'
 import { fitName, remapPath, uniqueName } from '../../lib/names'
 import { nextSort, sortEntries } from '../../lib/sort'
 import type { SortState } from '../../lib/sort'
@@ -47,8 +50,13 @@ import { ConfirmDelete } from '../dialogs/ConfirmDelete'
 import { DeleteProgress } from '../dialogs/DeleteProgress'
 import { ErrorDialog } from '../dialogs/ErrorDialog'
 import { MoveDialog } from '../dialogs/MoveDialog'
+import { PropertiesDialog } from '../dialogs/PropertiesDialog'
 import { UploadDialog } from '../dialogs/UploadDialog'
+import { ChainStrip } from '../inspector/ChainStrip'
+import type { StripRow } from '../inspector/ChainStrip'
+import { CheckReport } from '../inspector/CheckReport'
 import { ClusterMap } from '../inspector/ClusterMap'
+import type { MapLit } from '../inspector/ClusterMap'
 import { AddressBar } from '../shell/AddressBar'
 import { ContextMenu } from '../shell/ContextMenu'
 import type { Point } from '../shell/ContextMenu'
@@ -95,18 +103,8 @@ const describeFolder = (entries: LsEntry[]) => {
   return total > 0 ? `${count} · ${formatBytes(total)}` : count
 }
 
-/** Counts by FAT state, for the strip under the map. */
-const describeFat = (entries: FatEntry[]) => {
-  let free = 0
-  let bad = 0
-  for (const c of entries) {
-    const s = clusterState(c.status)
-    if (s === 'livre') free++
-    else if (s === 'defeituoso') bad++
-  }
-  const used = entries.length - free - bad
-  return `${plural(free, 'livre', 'livres')} · ${used} em uso · ${plural(bad, 'defeituoso', 'defeituosos')}`
-}
+/** From three selected items on, the strip under the map lists only the fragmented ones (tela 02). */
+const STRIP_ALL = 2
 
 export function Explorer() {
   const queryClient = useQueryClient()
@@ -135,6 +133,10 @@ export function Explorer() {
   /** the file open in the viewer (telas 11a and 11b) */
   const [viewing, setViewing] = useState<string | null>(null)
   const [uploading, setUploading] = useState<Upload | null>(null)
+  /** telas 06 and 07 */
+  const [properties, setProperties] = useState<Item | null>(null)
+  /** telas 18a and 18b */
+  const [checking, setChecking] = useState(false)
   const cancelDelete = useRef(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
@@ -156,7 +158,16 @@ export function Explorer() {
   // tela 04 locks the toolbar while the FAT is read; tela 17 leaves only
   // Formatar, which arrives in phase 6
   const locked = noDisk || readingFat
-  const modal = !!(failure || confirm || progress || moving || viewing || uploading)
+  const modal = !!(
+    failure ||
+    confirm ||
+    progress ||
+    moving ||
+    viewing ||
+    uploading ||
+    properties ||
+    checking
+  )
   /** writes are allowed: a disk, a listed folder, nothing else running */
   const canEdit = !locked && !busy && !!dir.data
 
@@ -338,6 +349,16 @@ export function Explorer() {
     setRenaming({ dir: current, path, error: null, busy: false })
   }
 
+  /** POST /file/rename, then every place holding the old path follows it. Rejects as the API did. */
+  const renamePath = async (dir: string, path: string, name: string) => {
+    const { path_novo } = await rename.mutateAsync({ path, nome: name })
+    await settle(dir)
+    forget(path)
+    nav.remap(path, path_novo)
+    setClipboard((c) => c && { ...c, paths: c.paths.map((p) => remapPath(p, path, path_novo)) })
+    selection.select([path_novo], dir)
+  }
+
   const commitRename = async (name: string) => {
     const r = renamingRef.current
     if (!r || r.busy) return
@@ -348,12 +369,7 @@ export function Explorer() {
 
     setRenaming({ ...r, error: null, busy: true })
     try {
-      const { path_novo } = await rename.mutateAsync({ path: r.path, nome: name })
-      await settle(r.dir)
-      forget(r.path)
-      nav.remap(r.path, path_novo)
-      setClipboard((c) => c && { ...c, paths: c.paths.map((p) => remapPath(p, r.path, path_novo)) })
-      selection.select([path_novo], r.dir)
+      await renamePath(r.dir, r.path, name)
       setRenaming(null)
     } catch (e) {
       // 15b: the field stays open with the text, the backend message under it
@@ -497,6 +513,48 @@ export function Explorer() {
     }
   }
 
+  // ------------------------------------------------------------- map
+
+  // the selection, or the folder being shown when nothing is selected
+  // (tela 03: the tree's selection in the primary tone)
+  const parentListing =
+    current === '/' ? undefined : queryClient.getQueryData<LsData>(keys.dir(parentOf(current)))
+  const folderFirst =
+    current === '/'
+      ? (disk?.rootCluster ?? null)
+      : (parentListing?.entradas.find((e) => e.nome === basename(current))?.primeiro_cluster ?? null)
+  const targets: Target[] = useMemo(
+    () =>
+      selectedItems.length > 0
+        ? selectedItems.map(({ path, entry }) => ({
+            path,
+            name: entry.nome,
+            dir: entry.tipo === 'diretorio',
+            size: entry.tamanho,
+            first: entry.primeiro_cluster,
+          }))
+        : [
+            {
+              path: current,
+              name: current === '/' ? toDosPath('/') : basename(current),
+              dir: true,
+              size: 0,
+              first: folderFirst,
+            },
+          ],
+    [selectedItems, current, folderFirst],
+  )
+  const showMap = !noDisk && !readingFat && !!fat.data && !dir.isError
+  const highlight = useHighlight(showMap ? targets : [], fat.data?.entradas)
+  // with two items each gets a tone; from three on, all share the primary one
+  const tone = (i: number): 'a' | 'b' => (highlight.length === 2 && i === 1 ? 'b' : 'a')
+  const litKey = highlight.map((h) => h.chain.join(',')).join('|')
+  const lit: MapLit[] = useMemo(
+    () => highlight.map((h, i) => ({ chain: h.chain, tone: tone(i) })),
+    // the chains' contents, not the array: useHighlight builds a new one per render
+    [litKey],
+  )
+
   // ------------------------------------------------------------- keys
 
   useWindowShortcuts(
@@ -512,6 +570,7 @@ export function Explorer() {
           selectAll: canEdit ? selection.all : undefined,
           cut: cutSelection,
           paste: () => void paste(),
+          properties: () => doProperties?.(),
         },
     !modal,
   )
@@ -528,6 +587,8 @@ export function Explorer() {
   const doCut = hasSelection ? cutSelection : undefined
   const doPaste = canPaste ? () => void paste() : undefined
   const doRename = canRename ? () => startRename() : undefined
+  const doProperties = canOpen && !busy && single ? () => setProperties(single) : undefined
+  const doCheck = !locked && !busy ? () => setChecking(true) : undefined
 
   // items without onSelect render disabled until their phase lands
   const menus: Menu[] = [
@@ -544,7 +605,7 @@ export function Explorer() {
         { label: 'Mover…', onSelect: doMove },
         { label: 'Excluir', shortcut: 'Del', onSelect: doDelete },
         { separator: true },
-        { label: 'Propriedades', shortcut: 'Alt+Enter' },
+        { label: 'Propriedades', shortcut: 'Alt+Enter', onSelect: doProperties },
       ],
     },
     {
@@ -574,7 +635,7 @@ export function Explorer() {
       label: 'Disco',
       items: [
         { label: 'Formatar…' },
-        { label: 'Verificar disco' },
+        { label: 'Verificar disco', onSelect: doCheck },
         { separator: true },
         { label: 'Inspetor de disco' },
       ],
@@ -603,9 +664,9 @@ export function Explorer() {
       { label: 'Renomear', onClick: doRename, disabled: !doRename },
       { label: 'Mover…', onClick: doMove, disabled: !doMove },
       { label: 'Excluir', onClick: doDelete, disabled: !doDelete },
-      { label: 'Propriedades' },
+      { label: 'Propriedades', onClick: doProperties, disabled: !doProperties },
     ],
-    [{ label: 'Formatar…' }, { label: 'Verificar disco' }],
+    [{ label: 'Formatar…' }, { label: 'Verificar disco', onClick: doCheck, disabled: !doCheck }],
   ]
 
   // build-frontend.md, "Context menu": the items depend on what was clicked
@@ -637,7 +698,7 @@ export function Explorer() {
       { label: 'Renomear', onSelect: doRename },
       { label: 'Excluir', onSelect: doDelete },
       { separator: true },
-      { label: 'Propriedades' },
+      { label: 'Propriedades', onSelect: doProperties },
     ]
   }
 
@@ -673,14 +734,8 @@ export function Explorer() {
   else if (dir.isError) statusMain = '—'
   else if (activeRename)
     statusMain = `Renomeando ${basename(activeRename.path)}: Enter confirma, Esc cancela`
-  else if (selectedItems.length > 1) {
-    const bytes = selectedItems.reduce((sum, it) => sum + it.entry.tamanho, 0)
-    statusMain = `${selectedItems.length} objetos selecionados${bytes > 0 ? ` · ${formatBytes(bytes)}` : ''}`
-  }
-  else if (single)
-    statusMain = `${single.entry.nome}: ${
-      single.entry.tipo === 'diretorio' ? 'Pasta de arquivos' : formatBytes(single.entry.tamanho)
-    }`
+  else if (selectedItems.length > 1) statusMain = describeMany(highlight)
+  else if (single && highlight[0]) statusMain = describeOne(highlight[0])
   else statusMain = describeFolder(entries)
 
   const statusSpace = disk
@@ -690,10 +745,26 @@ export function Explorer() {
       : '—'
   const statusDisk = disk ? `${disk.variante} · ${formatBytes(disk.clusterSize)}/cluster` : '—'
 
-  let mapFooter: string
+  let mapFooter: ReactNode
   if (noDisk) mapFooter = 'Sem disco aberto: não há tabela de alocação para mostrar.'
-  else if (fat.data) mapFooter = describeFat(fat.data.entradas)
-  else if (fat.isError) mapFooter = messageOf(fat.error)
+  else if (fat.data && showMap) {
+    const rows: StripRow[] = highlight.map((h, i) => ({
+      key: h.path,
+      name: h.name,
+      chain: h.chain,
+      tone: tone(i),
+    }))
+    let shown = rows
+    let more: string | undefined
+    if (rows.length > STRIP_ALL) {
+      const broken = rows.filter((r) => r.chain.some((c, i) => i > 0 && c !== r.chain[i - 1] + 1))
+      shown = broken.length > STRIP_ALL ? broken.slice(0, 1) : broken
+      if (broken.length === 0) more = `Nenhum dos ${rows.length} itens selecionados está fragmentado.`
+      else if (broken.length > STRIP_ALL) more = `… e mais ${broken.length - 1} itens fragmentados`
+    }
+    mapFooter = <ChainStrip rows={shown} fat={fat.data.entradas} more={more} />
+  } else if (fat.isError) mapFooter = messageOf(fat.error)
+  else if (fat.data) mapFooter = ''
   else mapFooter = 'O mapa é preenchido à medida que a FAT é lida.'
 
   // ---------------------------------------------------------------- layout
@@ -719,6 +790,7 @@ export function Explorer() {
       <ClusterMap
         entries={noDisk ? undefined : fat.data?.entradas}
         total={noDisk ? 0 : disk?.numClusters}
+        lit={lit}
         footer={mapFooter}
       />
     </>
@@ -798,6 +870,18 @@ export function Explorer() {
           onClose={() => setUploading(null)}
         />
       )}
+      {properties && (
+        <PropertiesDialog
+          path={properties.path}
+          entry={properties.entry}
+          disk={disk}
+          fat={fat.data?.entradas}
+          canRename={canEdit}
+          onRename={(name) => renamePath(current, properties.path, name)}
+          onClose={() => setProperties(null)}
+        />
+      )}
+      {checking && <CheckReport fat={fat.data?.entradas} onClose={() => setChecking(false)} />}
       {/* the computer's file picker; Arquivo > Enviar arquivo clicks it */}
       <input ref={fileInput} type="file" hidden onChange={onFilePicked} />
       {failure && (

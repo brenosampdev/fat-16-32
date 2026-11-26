@@ -4,6 +4,19 @@
 import { ApiError } from './src/api/client'
 import { corromper, mockApi, resetar, semear } from './src/api/mock'
 import { base64ToBytes, bytesToBase64, fragmentado } from './src/api/paths'
+import { chainFromFat } from './src/lib/chain'
+import {
+  countStates,
+  describeJump,
+  describeMany,
+  describeOccupants,
+  describeOne,
+  fatTableRows,
+  fatValue,
+  mapOwners,
+  slackShare,
+  usedInLast,
+} from './src/lib/inspect'
 
 let falhas = 0
 const ok = (cond: boolean, msg: string) => {
@@ -250,6 +263,65 @@ async function main() {
   const nomes = (await mockApi.ls('/')).entradas.map((e) => e.nome)
   ok(!nomes.includes(longo), 'nome acima de 31 bytes e cortado, como no backend')
   await esperaErro(404, () => mockApi.readFile('/' + longo), 'o caminho original deixa de existir')
+
+  console.log('\n20. Inspecao (fase 5): mapa, FAT[n], slack e resumos')
+  await semear()
+  const tabela = (await mockApi.diskFat()).entradas
+  const disco = await mockApi.diskInfo()
+  const estados = countStates(tabela)
+  ok(estados.livre === disco.clustersLivres, `livres na legenda = clusters_livres (${estados.livre})`)
+  ok(
+    estados.livre + estados.usado + estados.fim + estados.defeituoso === disco.numClusters,
+    'a legenda soma num_clusters',
+  )
+  const dados = await mockApi.chain('/docs/dados.bin')
+  ok(dados.cadeia.join() === '10,11,15,16,17,18', `dados.bin fragmentado: [${dados.cadeia}]`)
+  const primeiro = (await mockApi.ls('/docs')).entradas.find((e) => e.nome === 'dados.bin')!.primeiro_cluster
+  ok(chainFromFat(tabela, primeiro).join() === dados.cadeia.join(), 'cadeia lida da FAT = /file/chain')
+  const linhas = fatTableRows(dados.cadeia, tabela, 'FAT16')
+  ok(
+    linhas.map((l) => l.value).join() === '11,15,16,17,18,EOF (0xFFFF)',
+    `FAT[n] da tela 07: ${linhas.map((l) => l.value).join(' ')}`,
+  )
+  ok(linhas[1].jump?.gap.join() === '12,13,14', 'o salto 11 -> 15 pula 12, 13 e 14')
+  ok(linhas.filter((l) => l.fragment).map((l) => l.fragment).join() === '1,2', 'dois fragmentos, comecando em 10 e 15')
+  ok(linhas[5].last && !linhas[4].last, 'so a ultima linha e o fim da cadeia')
+  ok(describeJump(11, 15, tabela) === '12–14 em uso', `faixa do salto: ${describeJump(11, 15, tabela)}`)
+  ok(describeJump(18, 5, tabela) === 'volta ao 5', 'salto para tras')
+  ok(fatValue('EOF', 'FAT32') === 'EOF (0x0FFFFFFF)', 'EOF de FAT32 com o valor do backend')
+  ok(fatValue('livre', 'FAT16') === '0 (livre)', 'cluster livre vale 0')
+  ok(
+    dados.slack_interno === dados.num_clusters * disco.clusterSize - dados.tamanho_arquivo,
+    `slack_interno = num_clusters x cluster_size - tamanho (${dados.slack_interno})`,
+  )
+  ok(usedInLast(2600, 6, 512) === 40, 'ultimo cluster usa 40 B de 512')
+  ok(slackShare(dados.slack_interno, dados.tamanho_total_clusters) === '15,4%', 'slack e 15,4% do espaco em disco')
+  ok(
+    describeOne({ name: 'dados.bin', dir: false, size: 2600, chain: dados.cadeia }) ===
+      'dados.bin: 2.600 B em 6 clusters, 2 fragmentos',
+    'barra de status da tela 01',
+  )
+  ok(describeOne({ name: 'x', dir: false, size: 0, chain: [] }) === 'x: 0 B, nenhum cluster alocado', 'arquivo vazio')
+  const rel = await mockApi.chain('/docs/relatorio.txt')
+  ok(
+    describeMany([
+      { name: 'dados.bin', dir: false, size: 2600, chain: dados.cadeia },
+      { name: 'relatorio.txt', dir: false, size: 1300, chain: rel.cadeia },
+    ]) === '2 objetos selecionados: 3.900 B em 9 clusters, 1 fragmentado',
+    'barra de status da tela 02',
+  )
+  const donos = await mapOwners(
+    (p) => mockApi.ls(p),
+    (c) => chainFromFat(tabela, c),
+    disco.rootCluster,
+  )
+  ok(donos.get(disco.rootCluster!) === '/', 'o cluster da raiz pertence a raiz')
+  ok(describeOccupants([12, 13, 14], tabela, donos) === 'backup\\copia.txt', 'quem ocupa o salto de dados.bin')
+  const livre = tabela.find((c) => c.status === 'livre')!.cluster
+  ok(describeOccupants([livre], tabela, donos) === 'livre', 'cluster livre no salto')
+  corromper()
+  const fatCorrompida = (await mockApi.diskFat()).entradas
+  ok(describeOccupants([livre], fatCorrompida, donos) === 'sem dono', 'cluster ocupado que ninguem alcanca')
 
   console.log(falhas === 0 ? '\nTUDO OK\n' : `\n${falhas} FALHA(S)\n`)
   process.exit(falhas === 0 ? 0 : 1)
